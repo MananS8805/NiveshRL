@@ -69,6 +69,10 @@ def fmt(v, kind: str = "pct", digits: int = 1) -> str:
         return f"{v * 100:.{digits}f}%"
     if kind == "x":
         return f"{v:.2f}"
+    if kind == "text":
+        return str(v)
+    if kind == "int":
+        return f"{v:,.0f}"
     if kind == "inr":
         return f"₹{v:,.0f}"
     return f"{v:,.{digits}f}"

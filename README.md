@@ -34,7 +34,7 @@ NiveshRL asks whether deep learning adds anything over classic methods for **Ind
 
 | Screen | What you can do |
 | --- | --- |
-| **MKT** Market monitor | NIFTY/VIX with regime shading, a NIFTY 200 sector heatmap (1D to 1Y), breadth, movers, the models' consensus top picks |
+| **MKT** Market monitor | **Live prices** (Yahoo Finance stream, refreshed every few seconds), NIFTY/VIX with regime shading, a NIFTY 200 sector heatmap (1D to 1Y), breadth, advancers/decliners, movers, the models' consensus picks. **Click any stock in the heatmap** to open its details in place: live price, valuation and profitability ratios, 52-week range, quarterly revenue and profit, income statement, balance sheet, cash flow, ownership, analyst targets and our models' view |
 | **LAB** Backtest lab | Pick any signal, portfolio size, weighting, rebalance period, vol target, regime filter, costs and period. Get a full tearsheet (equity, drawdown, rolling Sharpe, monthly heatmap, VaR, regime split, turnover and costs, holdings, signal deciles and IC); compare up to 6 strategies; export the NAV |
 | **RANK** Stock ranker | Out-of-sample scoreboard, IC by year, decile spreads, live ranking of all 194 stocks with sector filter |
 | **EQ** Equity drilldown | One stock: price and averages, each model's monthly rank, volatility forecast vs realised, sector peers |
@@ -338,3 +338,4 @@ The regimes separate **future volatility** well: 12.6% after Bull weeks vs 20.6%
 - The cost schedule is as of 2025 and is configurable in [costs_india.yaml](configs/costs_india.yaml). Check it against your broker's contract note.
 - The tax model ignores carry-forward of losses across financial years and grandfathering.
 - yfinance data is free but imperfect. The quality report exists because of that.
+- Live prices come from Yahoo Finance's public stream. It is not exchange-grade, can lag NSE, and some symbols tick rarely; outside market hours (09:15-15:30 IST) the app shows the last close. Company financials are as reported on Yahoo Finance.
