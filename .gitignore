@@ -1,0 +1,20 @@
+# environment
+.venv/
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+
+# raw price caches: re-downloaded by scripts/prepare_data.py / the research loaders
+data/*.parquet
+# walk-forward predictions are small and let a fresh clone open the dashboard without hours of training
+!data/predictions/
+!data/predictions/*.parquet
+
+# training runs, checkpoints, logs (large, reproducible with scripts/)
+runs/
+checkpoints/
+*.log
+
+# local tooling
+.claude/

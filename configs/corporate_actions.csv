@@ -1,0 +1,12 @@
+# Manually reviewed corporate actions that are NOT standard split/bonus ratios
+# (demergers, capital reductions). On `date` the close is back-adjusted so the
+# day's return is zero: the price drop is a restructuring, not an investment loss.
+# Standard splits/bonuses are detected automatically in research/data.py.
+date,ticker,note
+2008-03-14,BAJAJFINSV.NS,Bajaj Auto demerger record date (yfinance history mixes pre-demerger entity)
+2008-03-14,BAJAJHLDNG.NS,Bajaj Auto demerger record date
+2008-05-26,BAJAJFINSV.NS,Bajaj Finserv listing after demerger
+2025-10-14,TMPV.NS,Tata Motors demerger (passenger vehicles / commercial vehicles)
+2026-04-30,VEDL.NS,Vedanta demerger into separate listed companies
+2015-06-03,ADANIENT.NS,Adani Enterprises demerger (ports/power businesses separated)
+2007-06-28,ABB.NS,Face-value split left unadjusted by yfinance (ratio 5.43)

@@ -1,0 +1,17 @@
+# Equity delivery charges on NSE (2025 schedule). All configurable; verify
+# against your broker's current contract note before relying on the numbers.
+stt_rate: 0.001            # Securities Transaction Tax, 0.1% on buy AND sell (delivery)
+exchange_rate: 0.0000297   # NSE transaction charge, 0.00297% of turnover
+sebi_rate: 0.000001        # SEBI turnover fee, Rs 10 per crore
+stamp_rate: 0.00015        # stamp duty, 0.015% on buy side only
+gst_rate: 0.18             # GST on (brokerage + exchange + SEBI fees)
+brokerage_rate: 0.0        # discount-broker delivery brokerage (fraction of turnover)
+brokerage_cap: 0.0         # Rs cap per order (0 = no brokerage)
+dp_charge: 15.93           # Rs per scrip per sell day (depository charge incl. GST)
+half_spread: 0.0003        # 3 bps half bid-ask spread for large caps
+impact_k: 0.1              # square-root impact coefficient: k * sigma_daily * sqrt(order / ADV)
+
+tax:
+  stcg_rate: 0.20          # held <= 12 months (Budget 2024)
+  ltcg_rate: 0.125         # held > 12 months
+  ltcg_exemption: 125000   # Rs per financial year

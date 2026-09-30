@@ -1,0 +1,49 @@
+data:
+  start: "2006-01-01"
+  end: "2026-09-18"
+  cache_dir: data
+  universe: configs/universe.yaml
+  jump_threshold: 0.25       # flag single-day |return| above this for review
+  max_ffill_days: 2
+
+splits:                      # chronological; test is touched ONCE for the final report
+  train: ["2008-01-01", "2018-12-31"]
+  val:   ["2019-01-01", "2020-12-31"]
+  test:  ["2021-01-01", "2025-12-31"]
+  forward: ["2026-01-01", "2026-12-31"]   # post-test holdout / paper-trading period
+
+features:
+  lookback: 12               # observation window, in rebalance steps
+  lookback_stride: 5         # trading days between observation rows (weekly)
+  clip: 5.0
+
+env:
+  rebalance_every: 5         # trading days (weekly)
+  episode_steps: 52          # one year of weekly decisions
+  initial_value: 500000      # Rs
+  cash_rate: 0.065           # annual T-bill proxy
+  max_stock_weight: 0.10
+  max_sector_weight: 0.30
+  tax_aware: false
+  sip_monthly: 0.0
+  trade_band: 0.005          # skip trades smaller than 0.5% of the portfolio (per stock)
+  min_trade_frac: 0.001      # ignore dust trades below 0.1% of the portfolio
+
+reward:
+  kind: utility              # utility | dsr | sortino | penalized
+  gamma_min: 1.0             # risk aversion 0 -> gamma 1 (bold: close to all stocks)
+  gamma_max: 12.0            # risk aversion 1 -> gamma 12 (cautious: Merton share ~15% stocks)
+  dsr_eta: 0.04              # EMA rate for the differential Sharpe ratio
+  downside_k: 0.0            # extra lambda(p) * (min(r,0)/sigma_ref)^2 penalty; 0 = risk priced by gamma only.
+                             # At 0.5 it double-counted risk and was ~-18/episode for cautious profiles vs a
+                             # ~+7 stock premium for bold ones, so it pulled EVERY profile into cash in training.
+  dd_mu: 1.0                 # penalty per unit of drawdown beyond the investor's tolerance
+                             # (scripts/reward_audit.py: gives best stock share 100/100/100/50/25% for
+                             # risk aversion 0/.25/.5/.75/1 on 2008-18 data)
+  sigma_ref: 0.02            # reference weekly volatility for normalising penalties
+
+profile_sampling:            # ranges used when sampling investor profiles in training
+  risk_aversion: [0.0, 1.0]
+  dd_tol: [0.10, 0.35]
+  horizon_years: [1.0, 15.0]
+  min_cash: [0.0, 0.20]

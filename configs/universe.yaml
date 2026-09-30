@@ -1,0 +1,42 @@
+# Fixed stock universe: ~30 liquid NIFTY 50 constituents continuously listed
+# since 2008. NOTE: this is today's index membership applied to the past, which
+# introduces survivorship bias (see README "Limitations"). Every strategy uses
+# the same universe, so comparisons *between* strategies stay fair.
+# Swaps made for data quality (see scripts/prepare_data.py):
+#   POWERGRID -> HEROMOTOCO  (POWERGRID listed Oct 2007, would cut 2008 from training)
+#   NESTLEIND -> BRITANNIA   (yfinance NESTLEIND is a frozen price with zero volume until Jan 2010)
+stocks:
+  - {ticker: HDFCBANK.NS,   sector: Financials}
+  - {ticker: ICICIBANK.NS,  sector: Financials}
+  - {ticker: SBIN.NS,       sector: Financials}
+  - {ticker: KOTAKBANK.NS,  sector: Financials}
+  - {ticker: AXISBANK.NS,   sector: Financials}
+  - {ticker: BAJFINANCE.NS, sector: Financials}
+  - {ticker: TCS.NS,        sector: IT}
+  - {ticker: INFY.NS,       sector: IT}
+  - {ticker: HCLTECH.NS,    sector: IT}
+  - {ticker: WIPRO.NS,      sector: IT}
+  - {ticker: RELIANCE.NS,   sector: Energy}
+  - {ticker: ONGC.NS,       sector: Energy}
+  - {ticker: NTPC.NS,       sector: Energy}
+  - {ticker: HEROMOTOCO.NS, sector: Auto}
+  - {ticker: HINDUNILVR.NS, sector: FMCG}
+  - {ticker: ITC.NS,        sector: FMCG}
+  - {ticker: BRITANNIA.NS,  sector: FMCG}
+  - {ticker: MARUTI.NS,     sector: Auto}
+  - {ticker: M&M.NS,        sector: Auto}
+  - {ticker: SUNPHARMA.NS,  sector: Pharma}
+  - {ticker: DRREDDY.NS,    sector: Pharma}
+  - {ticker: CIPLA.NS,      sector: Pharma}
+  - {ticker: TATASTEEL.NS,  sector: Materials}
+  - {ticker: HINDALCO.NS,   sector: Materials}
+  - {ticker: ULTRACEMCO.NS, sector: Materials}
+  - {ticker: LT.NS,         sector: Industrials}
+  - {ticker: ASIANPAINT.NS, sector: Consumer}
+  - {ticker: TITAN.NS,      sector: Consumer}
+  - {ticker: BHARTIARTL.NS, sector: Telecom}
+
+benchmark: ^NSEI
+context:
+  vix: ^INDIAVIX
+  fx: INR=X
