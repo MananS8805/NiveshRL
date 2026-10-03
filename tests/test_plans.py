@@ -90,3 +90,38 @@ def test_kite_holdings_csv_and_journal(tmp_path, monkeypatch):
     pf.close_trade(t.id, 110.0, "2026-01-10")
     st = pf.journal_stats(pf.load_journal())
     assert st["closed"] == 1 and 1.5 < st["avg_r"] < 2.0          # +2R gross, less delivery costs
+
+
+def test_forward_follow_stop_and_t1_rules():
+    from niveshrl.research import forward as F
+    n = 60
+    base = np.full(n, 100.0)
+    p = _panel(base, low=base - 1, high=base + 1)
+    atr = pd.DataFrame({"X.NS": np.full(n, 2.0)}, index=p.close.index)
+    d = p.close.index[39]                                   # plan: stop 4 below entry, T1 = +6
+    # path 1: gaps below the stop (opens at 95, stop 96) -> filled at the open: -1.25R, minus ~0.11R delivery costs
+    c = base.copy()
+    c[40:] = [100, 99, 95, 94] + [94] * (n - 44)
+    p1 = _panel(c, low=c - 1, high=c + 1)
+    o1 = F.follow(p1, "X.NS", d, atr)
+    assert o1.status == "closed" and o1.reason == "stop" and o1.exit == pytest.approx(95.0)
+    assert -1.40 < o1.r < -1.25
+    # path 2: reaches T1 (books a third); the 3xATR trail lifts the stop to 107 - 6 = 101; exits at 101:
+    #         1/3 x 1.5R + 2/3 x (101-100)/4 = +0.667R, minus ~0.11R costs
+    c2 = base.copy()
+    c2[40:] = [100, 103, 107, 101, 99] + [99] * (n - 45)
+    p2 = _panel(c2, low=c2 - 1, high=c2 + 1)
+    o2 = F.follow(p2, "X.NS", d, atr)
+    assert o2.status == "closed" and o2.reason == "trailing stop" and o2.exit == pytest.approx(101.0)
+    assert 0.5 < o2.r < 0.6
+    # the plan is computed as of the signal date: later bars cannot change the stop
+    assert F.follow(p2, "X.NS", d, atr).entry == pytest.approx(o2.entry)
+
+
+def test_edge_statistic():
+    from niveshrl.research import forward as F
+    rng = np.random.default_rng(0)
+    df = pd.DataFrame({"group": ["monitor list"] * 400 + ["random control"] * 400, "status": "closed",
+                       "r": np.r_[rng.normal(0.3, 1, 400), rng.normal(0.0, 1, 400)]})
+    e = F.edge(df)
+    assert 0.15 < e["edge R"] < 0.45 and e["t-stat"] > 2

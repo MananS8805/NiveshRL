@@ -815,7 +815,8 @@ E("intraday_agent", "Intraday paper agent", "Desk",
          "for most participants; no verdict before 100 closed trades.",
   related=["agent_bandit", "intraday_costs", "random_control", "speculative_tax"],
   aliases=["Agent", "Pool", "Today P&L", "After tax", "Intraday agent", "Replay", "Gross", "Costs", "Trades",
-           "vs random control"])
+           "vs random control", "Paper pool: agent vs random control (₹)",
+           "Replay: paper pool, agent vs random control (₹)"])
 E("agent_trade", "Agent trade / decision", "Desk",
   "One paper trade or decision: the stock, the setup that fired, long or short, the decision (TAKE full size, HALF "
   "size, SKIP, or BLOCKED by a guardrail), entry (next bar's open plus slippage), stop, target (2R), quantity, exit and "
@@ -853,6 +854,26 @@ E("agent_day", "Agent trading day", "Desk",
   "One day of the paper account: pool at start and end, gross P&L, costs, net P&L, tax accrued, trades, signals seen "
   "and skipped, the random control's net, and whether the day reached the +10% target.",
   related=["intraday_agent"], aliases=["Days"])
+E("forward_tracker", "Track record (forward tracker)", "Desk",
+  "Whether the app's suggestions worked: every 'watch for strength' pick is followed with the swing rules (buy at the "
+  "next open; plan stop; a third booked at T1 = 1.5R with the stop moved to entry; the rest trailed 3 x ATR; 60-day "
+  "cap; after delivery costs) next to an equal-size random sample of that day's other stocks.",
+  how="Forward: real saved daily runs, as days accumulate. Historical replay: the same list rebuilt every 5th trading day "
+      "2015 to today on point-in-time NIFTY 200 members from the walk-forward next-day model and technicals (no news). "
+      "A stock counts once per 30 days per group; picks carry a hash of the rules so rule changes are visible.",
+  use="Measured on point-in-time history: the monitor list averaged +0.133R per trade vs +0.055R for random picks (edge "
+      "+0.08R, t-stat 2.4 over ~9,000 trades): a modest but real edge. The median trade still loses; winners are bigger.",
+  caveat="No verdict on the forward record before 100 closed trades per group; one good or bad month says little.",
+  related=["r_multiple", "random_control", "trade_plan"],
+  aliases=["Track record", "Edge vs random", "Saved days", "Picks followed", "Closed", "Rules", "t-statistic",
+           "Period", "Forward tracker", "Cumulative R after costs: monitor list vs random control"])
+E("sentiment_test", "Sentiment forward test", "News & analysts",
+  "FinBERT sentiment buckets (negative below -0.2, neutral, positive above +0.2) on each saved day, against the next 1 "
+  "and 5 trading days' return minus the median stock.",
+  use="The only way to learn whether news sentiment predicts anything here: it can't be backtested because there is no "
+      "news history, so it is measured forward as days accumulate.",
+  caveat="Meaningless with a handful of days; read it after months of daily runs.",
+  related=["finbert", "sentiment_adj"], aliases=["avg excess", "hit (beat median)"])
 E("weight", "Portfolio weight", "Backtest & risk", "Share of the portfolio in each stock at the last rebalance.",
   unit="pct", aliases=["Weight"])
 E("rebalance", "Rebalance log", "Backtest & risk", "One row per rebalance: turnover traded, costs paid (₹), "

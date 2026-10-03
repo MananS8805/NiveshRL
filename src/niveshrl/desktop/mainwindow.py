@@ -28,6 +28,7 @@ from . import data, theme
 from .panels import Panel, vbox
 from .explain import ExplainPanel
 from .panels.agent import AgentPanel
+from .panels.track import TrackPanel
 from .panels.desk import DeskPanel
 from .panels.glossary import GlossaryPanel
 from .panels.lab import LabPanel
@@ -139,10 +140,10 @@ class AlertsPanel(Panel):
 
 
 PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
-          AlertsPanel, GlossaryPanel, DeskPanel, AgentPanel]
+          AlertsPanel, GlossaryPanel, DeskPanel, AgentPanel, TrackPanel]
 # Sidebar order: (code, label). Ctrl+1 … Ctrl+0 jump to these in order.
 NAV = [("MKT", "Market"), ("TODAY", "Today"), ("SCRN", "Screener"), ("WATCH", "Watchlist"), ("DESK", "My desk"),
-       ("ALGO", "Intraday agent"),
+       ("ALGO", "Intraday agent"), ("TRACK", "Track record"),
        ("DES", "Stock"),
        ("RANK", "Rankers"), ("LAB", "Backtest lab"), ("RISK", "Risk"), ("PLAN", "RL & plan"), ("ALRT", "Alerts"),
        ("GLOS", "Glossary")]
