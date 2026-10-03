@@ -365,7 +365,9 @@ class MainWindow(QMainWindow):
                     p.on_tick()
                 except Exception:
                     log.exception("on_tick failed in %s", p.code)
-        self._refresh_strip()
+        self._strip_n = getattr(self, "_strip_n", 0) + 1
+        if self._strip_n % 2 == 0:
+            self._refresh_strip()
         self._ui_ms = (time.perf_counter() - t0) * 1000
 
     def _refresh_strip(self) -> None:

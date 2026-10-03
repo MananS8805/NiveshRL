@@ -86,6 +86,8 @@ class MarketPanel(Panel):
         self.dn = FrameTable(fmt={"Last": "₹{:,.2f}", "Chg": "{:+.2%}"}, signed={"Chg"})
         for t in (self.up, self.dn):
             t.row_clicked.connect(lambda tk: self.stock_selected.emit(str(tk)))
+            t.setSortingEnabled(False)                 # already ranked; skip re-sorting on every live update
+            t.proxy.setDynamicSortFilter(False)
         sl.addWidget(self.up)
         sl.addWidget(h2("Top losers"))
         sl.addWidget(self.dn)
@@ -129,10 +131,13 @@ class MarketPanel(Panel):
         self.tree.set_data(hm)
 
     def _rest(self, b, lt, snap, force_layout) -> None:
-        mv = pd.DataFrame({"Last": lt["last"], "Chg": lt["chg1"]}).dropna(subset=["Chg"])
-        self.up.set_frame(mv.nlargest(12, "Chg"), live=not force_layout)
-        self.dn.set_frame(mv.nsmallest(12, "Chg"), live=not force_layout)
-        n_live = int(lt["live"].sum())
+        chg, last = lt["chg1"].to_numpy(), lt["last"].to_numpy()
+        ok = np.flatnonzero(np.isfinite(chg))
+        order = ok[np.argsort(chg[ok], kind="stable")]
+        for table, idx in ((self.up, order[::-1][:12]), (self.dn, order[:12])):
+            table.set_frame(pd.DataFrame({"Last": last[idx], "Chg": chg[idx]}, index=b.idx[idx]),
+                            live=not force_layout)
+        n_live = int(lt["live"].to_numpy().sum())
         self.note.setText(f"{n_live} streaming · others at last close {b.p.close.index[-1]:%d %b %Y}")
         # status tape
         nifty, vix = snap.get("^NSEI"), snap.get("^INDIAVIX")
@@ -156,7 +161,7 @@ class MarketPanel(Panel):
             ("YTD", f"{ytd:+.2%}", theme.signed(ytd)),
             ("India VIX", f"{v_last:.2f}", theme.RED if v_last > b.vix_med else theme.GREEN, f"1y median {b.vix_med:.1f}"),
             ("Breadth >200DMA", f"{breadth:.0%}", theme.signed(breadth - 0.5)),
-            ("Adv / Dec", f"{int((lt['chg1'] > 0).sum())} / {int((lt['chg1'] < 0).sum())}", None),
+            ("Adv / Dec", f"{int((chg > 0).sum())} / {int((chg < 0).sum())}", None),
             ("Regime", r, theme.GREEN if r == "Bull" else theme.RED if r == "Stress" else theme.AMBER),
         ])
 

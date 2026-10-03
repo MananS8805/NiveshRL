@@ -7,11 +7,11 @@ import traceback
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from PySide6.QtCore import (QAbstractTableModel, QModelIndex, QObject, QRectF, QRunnable, QSortFilterProxyModel, Qt,
+from PySide6.QtCore import (QAbstractTableModel, QEvent, QModelIndex, QObject, QRectF, QRunnable, QSortFilterProxyModel, Qt,
                             QThreadPool, Signal)
 from PySide6.QtGui import QBrush, QColor, QFont, QPen
 from PySide6.QtWidgets import (QFrame, QGraphicsRectItem, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView,
-                               QGridLayout, QHeaderView, QLabel, QTableView, QVBoxLayout, QWidget)
+                               QGridLayout, QHeaderView, QLabel, QTableView, QToolTip, QVBoxLayout, QWidget)
 
 from . import theme
 
@@ -325,7 +325,6 @@ class Treemap(QGraphicsView):
                 rect.setPen(QPen(QColor(theme.BG), 1))
                 rect.setBrush(QBrush(heat_color(row["ret"], lim)))
                 rect.setData(0, tk)
-                rect.setToolTip(f"{row.get('name', tk)}\n{row['ret']:+.2%}  ₹{row['last']:,.2f}")
                 sc.addItem(rect)
                 txt = None
                 if w > 34 and h > 18:
@@ -334,6 +333,7 @@ class Treemap(QGraphicsView):
                     txt.setFont(font)
                     txt.setBrush(QColor(theme.TEXT))
                     txt.setPos(x + 2, y + 1)
+                    txt.setData(0, tk)                    # clicking/hovering the label acts on the tile
                     sc.addItem(txt)
                 self.items[tk] = (rect, txt)
         self._lim = lim
@@ -347,15 +347,27 @@ class Treemap(QGraphicsView):
             item = self.items.get(tk)
             if item is None:
                 continue
-            key = (round(float(r), 4) if r == r else None, round(float(last), 2))
+            key = round(float(r), 3) if r == r else None     # the tile shows 0.1% steps
             if shown.get(tk) == key:
                 continue
             shown[tk] = key
             rect, txt = item
             rect.setBrush(QBrush(heat_color(r, lim)))
-            rect.setToolTip(f"{name}\n{r:+.2%}  ₹{last:,.2f}")
             if txt is not None and "\n" in txt.text():
                 txt.setText(f"{tk.replace('.NS', '')}\n{r:+.1%}")
+
+    def viewportEvent(self, e):
+        """Tooltips are built on hover from the latest data (setting 194 tooltips per tick is slow)."""
+        if e.type() == QEvent.ToolTip:
+            it = self.itemAt(e.pos())
+            tk = it.data(0) if it is not None else None
+            if tk is not None and tk in self.df.index:
+                row = self.df.loc[tk]
+                QToolTip.showText(e.globalPos(), f"{row.get('name', tk)}\n{row['ret']:+.2%}  ₹{row['last']:,.2f}", self)
+            else:
+                QToolTip.hideText()
+            return True
+        return super().viewportEvent(e)
 
     def mousePressEvent(self, e):
         it = self.itemAt(e.position().toPoint())
