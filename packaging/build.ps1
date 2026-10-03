@@ -30,7 +30,13 @@ New-Item -ItemType Directory -Force (Join-Path $Seed "data") | Out-Null
 foreach ($f in @("ind_nifty200list.csv", "nifty200_panel.parquet", "nifty200_context.parquet", "stocks.parquet", "context.parquet")) {
     if (Test-Path "data\$f") { Copy-Item "data\$f" (Join-Path $Seed "data\$f") }
 }
-foreach ($d in @("predictions", "daily")) { if (Test-Path "data\$d") { Copy-Item -Recurse "data\$d" (Join-Path $Seed "data\$d") } }
+foreach ($d in @("predictions", "daily", "constituents")) { if (Test-Path "data\$d") { Copy-Item -Recurse "data\$d" (Join-Path $Seed "data\$d") } }
+# intraday agent: the liquid universe and the replay's learning (warm start + the Replay tab); not the 5-minute bars
+New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\replay") | Out-Null
+if (Test-Path "data\intraday\universe.csv") { Copy-Item "data\intraday\universe.csv" (Join-Path $Seed "data\intraday\universe.csv") }
+foreach ($f in @("state.json", "trades.csv", "bandit.json", "scorer.pkl", "shadow.parquet")) {
+    if (Test-Path "data\intraday\replay\$f") { Copy-Item "data\intraday\replay\$f" (Join-Path $Seed "data\intraday\replay\$f") }
+}
 # RL checkpoints used by the investor plan (small); skip the 32 MB SB3 runs and logs
 foreach ($r in Get-ChildItem runs -Directory) {
     if ((Test-Path (Join-Path $r.FullName "best.pt")) -and (Test-Path (Join-Path $r.FullName "args.json")) -and -not $r.Name.StartsWith("sb3")) {
