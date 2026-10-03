@@ -93,8 +93,8 @@ python -m niveshrl.desktop            # or NiveshRL.exe from the installer;  --t
 
 A native PySide6 app with the same features and terminal look as the web view, built to stay open all day:
 
-- **Workspace:** a command bar (`Ctrl+K`, type `RELIANCE` or a screen code such as `SCRN`), a scrolling ticker strip, and dockable panels (Market, Today, Screener, Watchlist, Stock, Lab, Rankers, Risk, RL/Plan, Alerts). Panels drag, tab, float and close; the layout is saved to `%APPDATA%\NiveshRL`.
-- **Charts:** pyqtgraph candlesticks with SMA50/200, volume and RSI panes, a crosshair and smooth zoom; a squarified sector treemap heatmap.
+- **Workspace:** a left-hand menu that shows one screen at a time (Market, Today, Screener, Watchlist, Stock, Rankers, Backtest lab, Risk, RL & plan, Alerts; `Ctrl+1` … `Ctrl+0`), a Back button (`Alt+Left`), a command bar (`Ctrl+K`, type `RELIANCE` or a screen code such as `SCRN`) and a scrolling ticker strip. Window size and last screen are saved to `%APPDATA%\NiveshRL`.
+- **Charts:** pyqtgraph candlesticks with SMA50/200, volume and RSI panes. Range buttons (1M … 5Y, All); the mouse wheel zooms time only, dragging pans, the price axis always fits the visible window, double-click resets; a readout shows the date, OHLC, change, volume, SMA50 and RSI under the cursor. A squarified sector treemap heatmap.
 - **Tray app:** closing the window keeps the live feed, watchlist alerts (Windows notifications, once per alert per day) and the **16:00 pipeline** running. Optional start-with-Windows.
 - **Process model:** the UI thread only paints. The live feed runs on its own thread into the C++ tick store; file loads, Yahoo fundamentals and backtests run on a thread pool; the daily pipeline (FinBERT, LightGBM, DL) runs in a **separate worker process**, so model memory is returned to the OS after each run.
 - **Long-run hardening:** a watchdog restarts a dead or stalled feed (no ticks for 5 min in market hours) and notices a crashed worker; caches are bounded (LRU backtests, pruned fundamentals, only today's daily outputs); rotating logs in `%APPDATA%\NiveshRL\logs`; CPU/RAM/UI-latency shown in the status bar.
