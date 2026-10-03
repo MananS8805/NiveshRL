@@ -87,6 +87,22 @@ class TodayPanel(Panel):
                             "for your capital and risk in My desk (weakness list: the level where holders should exit)."))
         self.tabs.addTab(watch, "Watch tomorrow")
 
+        # --- tab: who will move tomorrow (range model)
+        mw = QWidget()
+        ml = vbox(mw)
+        ml.addWidget(h2("Who will move tomorrow (expected range, not direction)", key="range_model"))
+        self.movers = FrameTable(fmt={"Expected range %ile": "{:.0%}", "Avg range (20d)": "{:.2%}", "Today's range": "{:.2%}",
+                                      "ATR %": "{:.2%}", "Volume / avg": "{:.1f}×", "NR7": "{:.0f}"})
+        self.movers.model_.term_overrides = {"Expected range %ile": "range_model", "Avg range (20d)": "range_model",
+                                             "Today's range": "range_model", "NR7": "pattern_nr7"}
+        self.movers.row_clicked.connect(lambda t: self.stock_selected.emit(str(t)))
+        ml.addWidget(self.movers, 1)
+        ml.addWidget(muted("Ranked by a model of tomorrow's high-to-low range (walk-forward 2015 → today on point-in-time "
+                           "members: the top 20 averaged a 4.8% next-day range vs 3.1% for the average stock; 94% moved at "
+                           "least 2%). It predicts how much a stock moves, not which way: useful for choosing what to "
+                           "watch intraday."))
+        self.tabs.addTab(mw, "Who will move")
+
         # --- tab 3: market habits
         habw = QWidget()
         hl = vbox(habw)
@@ -168,6 +184,14 @@ class TodayPanel(Panel):
                 view["Why"] = df["reasons"]
                 tab.model_.fmt.update({"Stop": "₹{:,.2f}", "T1": "₹{:,.2f}", "Qty": "{:,.0f}"})
                 tab.set_frame(view)
+        rg = data.dload("range")
+        if rg is not None and len(rg):
+            v = rg.head(25)
+            self.movers.set_frame(pd.DataFrame({"Expected range %ile": v["range_pct"], "Avg range (20d)": v["adr20"],
+                                                "Today's range": v["range_1d"], "ATR %": v["atr_pct"],
+                                                "Volume / avg": v["vol_ratio"], "NR7": v["nr7"]}))
+        else:
+            self.movers.set_frame(pd.DataFrame({"": ["No range forecast yet: run the daily refresh (F5)."]}))
         # habits
         if hab:
             dow = pd.DataFrame(hab["day_of_week"]).T

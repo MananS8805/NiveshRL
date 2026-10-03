@@ -27,18 +27,33 @@ FUND_COLUMNS = {
     "analyst_score": ("Analyst score (0-100)", "Analysts", "num"), "target_upside": ("Target upside", "Analysts", "pct"),
     "numberOfAnalystOpinions": ("# analysts", "Analysts", "num"), "days_to_earnings": ("Days to results", "Events", "num"),
 }
+PATTERN_COLUMNS = {
+    "vcp": ("VCP (tightening)", "Patterns", "flag"), "flat_base": ("Flat base", "Patterns", "flag"),
+    "high_box": ("52-week-high box", "Patterns", "flag"), "nr7": ("NR7 (quiet day)", "Patterns", "flag"),
+    "pocket_pivot": ("Pocket pivot", "Patterns", "flag"), "squeeze": ("Bollinger squeeze", "Patterns", "flag"),
+    "pattern_count": ("Patterns (count)", "Patterns", "num"), "pivot_dist": ("Pivot distance", "Patterns", "pct"),
+    "deliv_pct": ("Delivery % (today)", "Volume", "pct"), "deliv_avg20": ("Delivery % (20d avg)", "Volume", "pct"),
+    "deliv_up_minus_down": ("Delivery: up − down days", "Volume", "pct"),
+    "vol_phase_score": ("Volume phase score", "Volume", "num"),
+}
 SIGNAL_COLUMNS = {
     "prob_up": ("Next-day P(up)", "Models", "pct"), "monthly_pct": ("Monthly ranker %ile", "Models", "pct"),
     "sentiment": ("News sentiment", "News", "num"), "sentiment_adj": ("Sentiment (adj.)", "News", "num"),
     "n_news": ("Headlines (48h)", "News", "num"), "buzz": ("News buzz", "News", "num"),
 }
-COLUMNS = {**TECH_COLUMNS, **FUND_COLUMNS, **SIGNAL_COLUMNS}
+COLUMNS = {**TECH_COLUMNS, **FUND_COLUMNS, **PATTERN_COLUMNS, **SIGNAL_COLUMNS}
 
 OPS = {">": np.greater, ">=": np.greater_equal, "<": np.less, "<=": np.less_equal, "=": np.equal}
 
 # Each preset: (description, [(column, op, value), ...]); values in the column's own units
 # (percent columns as fractions, e.g. 0.15 = 15%).
 PRESETS = {
+    "Volatility squeeze": ("Bollinger Bands inside Keltner Channels: unusually quiet. Measured: no reliable edge vs the "
+                           "average stock over 20 days (+0.14%, t 1.3, point-in-time 2014-2026)", [("squeeze", "=", 1)]),
+    "Base near pivot": ("Flat base within 3% under its pivot (the 20-day high)",
+                        [("flat_base", "=", 1), ("pivot_dist", ">=", -0.03), ("pivot_dist", "<=", 0.0)]),
+    "VCP": ("Volatility contraction above the 200-day average. Measured: no reliable edge (+0.20% / 20 days, t 0.6)",
+            [("vcp", "=", 1)]),
     "Momentum breakout": ("Near the 52-week high on heavy volume, strong but not overbought RSI",
                           [("from_52w_high", ">=", -0.05), ("vol_ratio", ">=", 1.5), ("rsi14", ">=", 55), ("rsi14", "<=", 72)]),
     "Oversold quality": ("Beaten down (RSI < 35) but profitable with modest debt",
@@ -85,6 +100,10 @@ def build_table(folder: Path, monthly: pd.DataFrame | None = None) -> pd.DataFra
             fund["marketCap"] = pd.to_numeric(fund["marketCap"], errors="coerce") / 1e7      # ₹ crore
         fund = fill_roe(fund)
         t = t.join(fund[[c for c in FUND_COLUMNS if c in fund]], how="left")
+    dv = folder / "delivery.parquet"
+    if dv.exists():
+        t = t.join(pd.read_parquet(dv)[["deliv_pct", "deliv_avg20", "deliv_up_minus_down", "vol_phase_score", "vol_phase"]],
+                   how="left")
     s = folder / "sentiment.parquet"
     if s.exists():
         t = t.join(pd.read_parquet(s)[["sentiment", "sentiment_adj", "n_news", "buzz"]], how="left")

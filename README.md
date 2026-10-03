@@ -12,7 +12,7 @@ Streamlit web terminal **and** a native Windows desktop app (PySide6 + a C++ cor
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Qt](https://img.shields.io/badge/desktop-PySide6%20%2B%20C%2B%2B-41CD52?logo=qt&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-143%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-171%20passing-2ea44f)
 ![Market](https://img.shields.io/badge/market-NSE%20India-FF9F1C)
 
 </div>
@@ -85,6 +85,40 @@ python scripts/daily.py                 # ~5 min: prices, technicals, fundamenta
 
 **What it says:** the signal is real and very consistent (IC t-stats near 20 over 2,900 days; the ensemble's top-10 picks beat the median 54% of the time), but it is small: buying the top 10 every day and selling the next day **loses money after Indian delivery costs**. That is why the app presents it as a *monitor list* (what to watch tomorrow), never as a trading system. 51–54% next-day accuracy is a normal, honest result for this problem.
 
+## Trade plans, track record and the intraday agent
+
+**Trade plans and My desk.** For any stock: stop just under the 10-day low, kept between 2× and 2.5× ATR and at most 8%
+away; T1 = 1.5R, T2 = 2.5R; size = capital × risk% ÷ R (max 20% of capital per stock), halved automatically when NIFTY is
+below its 200-day average, the market is narrow (under half of stocks above their 50-day average) or the regime reads
+Stress. Plans appear on Today's watch list, on every stock page and in **My desk**: a capital planner (orders for your
+capital, at most 2 per sector), your **Kite holdings** imported from CSV with a ratcheting exit line (close − 3 × ATR;
+HOLD / EXIT / REVIEW), and a **journal** that scores your real trades in R after costs.
+
+**Track record.** Every saved 'watch for strength' pick is followed with those rules (next open; a third booked at T1 and
+the stop moved to entry; the rest trailed 3 × ATR; 60-day cap; delivery costs) next to an equal random sample, forward as
+days accumulate, plus a historical replay on point-in-time members (result above). A FinBERT sentiment forward test
+measures whether news tone predicts anything, which can only be learned forward (there is no news history).
+
+**Intraday paper agent** (`Intraday agent` screen; `python scripts/intraday_replay.py`). A virtual pool (default ₹1,00,000)
+trades **934 liquid NSE stocks** (EQ series, ≥ ₹10 crore/day) intraday on its own during market hours. **Paper only: it
+never places an order.**
+- *Each 5 minutes:* the most active ('in play') stocks → six rule-based setups on finished 5-minute bars (opening-range
+  breakout, VWAP reclaim/rejection, 9/20 EMA pullback, previous-day high/low, gap-and-go, NR7) → a LightGBM probability
+  and a Thompson-sampling bandit decide TAKE / HALF / SKIP → fills at the next bar's open plus slippage.
+- *Guardrails it can never change:* ≤ 1% of the pool at risk per trade, ≤ 5 positions, no new trades after a −3% day,
+  square-off 15:15, ≤ 2% of a bar's volume, leverage 1× by default (toggle 1-5×), and signals whose round-trip costs would
+  exceed 0.2R are skipped.
+- *Costs and tax:* brokerage (₹20 or 0.03%), STT 0.025% on sells, exchange, SEBI, stamp duty, GST and slippage on every
+  trade; intraday profit taxed as speculative income at your slab (default 30% + cess) on the financial year's net.
+- *Learning from mistakes:* every signal is followed to its outcome even when skipped, so wrong skips are learned too;
+  context buckets that clearly lose (t < −2) are skipped; days ending ≥ +10% (your target) earn a reward bonus. A
+  coin-flip **control account** trades the same signals so learning is judged against luck.
+- *Measured so far (replay, Jul-Oct 2026, 52 days):* ₹1,00,000 → **₹86,422 (−13.6%)**; gross −₹6,854, costs ₹6,724;
+  151 trades, 38% win, −0.17R average; no day reached +10%. The control lost 30.5%. A first replay without the cost rule
+  lost 19.6% (control −23.2%); the cost rule was added after seeing it, so this replay is partly in-sample. Before costs
+  the signals were roughly breakeven: on tight intraday stops, costs (~0.25R per trade) exceed the edge. **Live paper
+  trading over months is the real test**; no verdict before 100 closed trades.
+
 ## Desktop app (Windows)
 
 ```bash
@@ -106,27 +140,49 @@ A native PySide6 app with the same features and terminal look as the web view, b
 
 **Soak test:** `python scripts/soak_desktop.py --minutes 360 --live` during market hours, or with a synthetic 200 ticks/s feed at any time. It cycles panels and stocks, samples RSS and UI tick time, and passes when memory growth after warm-up is within ±50 MB and the UI tick p99 is under 50 ms.
 
-## Headline results
+## Headline results (survivorship-free)
 
-Walk-forward out-of-sample, **Jan 2012 → Sep 2026**, NIFTY 200. Top 20 stocks, monthly rebalance, after real NSE costs.
+Walk-forward out-of-sample, **Jan 2014 → Oct 2026**, top 20 stocks, monthly rebalance, after real NSE costs. The same
+strategies measured twice: on **today's** NIFTY 200 members applied to the past (what most backtests do, and what this
+README used to report) and on the index **as it actually was** on each date, rebuilt from 9 archived NSE snapshots
+([survivorship report](report/results/survivorship.md)).
 
-| Strategy | CAGR | Sharpe | Max drawdown | Cost drag / yr |
+| Strategy | CAGR, today's members | **CAGR, point-in-time** | Sharpe, point-in-time | Beats random picks* |
 | --- | --- | --- | --- | --- |
-| Equal weight, same universe (**fair benchmark**) | 23.3% | 0.98 | −36.2% | 0.14% |
-| Momentum 12-1 | 39.6% | 1.43 | −42.7% | 0.99% |
-| Transformer ranker | 32.7% | 1.23 | −40.3% | 2.54% |
-| Transformer ranker, quarterly rebalance | 32.7% | 1.23 | −37.3% | **0.89%** |
-| Transformer ranker + regime filter | 28.2% | 1.21 | **−32.8%** | 2.19% |
-| FFNN ranker (Takeuchi & Lee) | 33.0% | 1.19 | −41.0% | 2.22% |
-| NIFTY 50 (price index) | 10.6% | – | – | – |
+| Momentum 12-1 | 39.8% | **19.3%** | 0.64 | 99% |
+| Equal weight, all members | 24.7% | **16.7%** | 0.63 | – |
+| LSTM ranker | 26.1% | **16.8%** | 0.59 | 93% |
+| FFNN ranker (Takeuchi & Lee) | 35.0% | **16.3%** | 0.54 | 99% |
+| Transformer ranker | 34.4% | **16.1%** | 0.56 | 97% |
+| Logistic regression | 26.2% | **11.7%** | 0.34 | 68% |
+| NIFTY 50 (price index) | 10.8% | 10.8% | – | – |
+
+\*Luck test: the same rules (size, weights, caps, rebalance dates, costs) run 200 times with random picks from the same
+eligible stocks; the share of those random portfolios the strategy beat on return ÷ drawdown.
 
 **What the results say:**
-- **Plain momentum is the bar, and no deep model clears it.** The Transformer has the most *consistent* signal (monthly IC t-stat 4.7 vs 3.8 for momentum) but trades far more.
-- **The Transformer's edge lasts a quarter.** Quarterly rebalancing keeps its return and cuts costs by about 1.6%/yr.
-- **The regime filter trades return for drawdown.**
-- **Judge everything against the equal-weight row, not NIFTY.** The universe is today's index members, which inflates absolute returns.
+- **Survivorship bias roughly halved every result.** Testing only on companies that are in the index today hides the
+  ones that collapsed or were demoted, and flatters momentum most.
+- **On honest data the deep rankers do not beat plain equal weight after costs.** Their ranking skill is real (monthly
+  IC t-stat ≈ 3.7, and they beat 93-99% of random portfolios with the same rules), but monthly turnover costs absorb it.
+- **Simple momentum remains the strongest monthly strategy** (19.3%/yr, Sharpe 0.64), ahead of every model.
+- **Everything still beats NIFTY 50**, largely because an equal-weighted NIFTY 200 beat the cap-weighted NIFTY 50 over
+  this period.
+- Residual bias: about 7% of member-days have no Yahoo prices (mostly delisted or merged companies), and delisted
+  holdings are carried at their last price, so even these numbers are slightly flattering.
 
-Full details: [Research results](#research-results-walk-forward-out-of-sample-2012--sep-2026).
+Older, survivorship-biased tables are kept below for reference ([Research results](#research-results-walk-forward-out-of-sample-2012--sep-2026)).
+
+## What else was measured (all walk-forward, point-in-time where it applies)
+
+| Question | Result |
+| --- | --- |
+| Do the daily **'watch for strength' picks** work, traded with the trade-plan rules? | 2015-2026, ~9,000 trades: **+0.133R** per trade after costs vs **+0.055R** for random picks on the same days: edge **+0.078R, t 2.4**. Modest but real; the median trade still loses ([Track record](#trade-plans-track-record-and-the-intraday-agent)). |
+| Does the **next-day model** survive point-in-time testing? | Yes, slightly stronger: AUC 0.531, daily IC 0.059 (t 24); trading its top 10 every day still loses after costs. |
+| Can we predict **who will move tomorrow** (range, not direction)? | Yes: IC 0.51 with tomorrow's range; the top 20 averaged a 4.8% next-day range vs 3.1% for the average stock (94% moved ≥ 2%). Beats today's range (IC 0.39) and the 20-day average range (0.47). |
+| Do classic **chart patterns** predict 20-day returns? | No. VCP, flat base, 52-week-high box, NR7, pocket pivot and Bollinger squeeze: all within ±0.2% of the average stock, none significant. (An earlier measurement against the *median* stock showed large 'edges'; they were an artefact of skewed returns.) |
+| Does an accumulation / distribution **volume phase** predict? | No (Accumulation −0.07%, Distribution +0.17% vs the average stock over 20 days). |
+| Can an **intraday agent** trade its way to profit after costs? | Not yet: a 52-day replay lost 13.6% of a ₹1 lakh paper pool (gross also negative) while beating a coin-flip control (−30.5%). See the agent section. |
 
 ## Architecture
 
@@ -172,7 +228,7 @@ NiveshRL/
 ├── scripts/                    # prepare_data, train_rankers, train_volatility, train_regimes, train_custom, evaluate, demo …
 ├── cpp/                        # C++ core (pybind11): indicators, screener, backtest loop, tick store
 ├── packaging/                  # PyInstaller spec, Inno Setup script, build.ps1
-├── tests/                      # 143 tests
+├── tests/                      # 171 tests
 └── report/                     # results tables and figures
 ```
 
@@ -192,7 +248,7 @@ python -m venv .venv && .venv/Scripts/activate      # Windows; use bin/activate 
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
 python scripts/prepare_data.py                     # download + data-quality report
-pytest                                             # 143 tests: costs, tax, env, no-lookahead, leakage, desk, C++ parity, desktop UI
+pytest                                             # 171 tests: costs, tax, env, no-lookahead, leakage, desk, C++ parity, desktop UI
 python scripts/sanity_toy.py                       # can PPO find the one drifting stock?
 python scripts/run_baselines.py --split val
 python scripts/train_custom.py --steps 500000 --seed 0

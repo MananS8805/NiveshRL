@@ -553,7 +553,7 @@ E("ffnn", "FFNN ranker (Takeuchi & Lee)", "Models",
   "returns into a few momentum-like factors.",
   how=_RANK_INPUTS,
   use="Gives a monthly ranking of all NIFTY 200 stocks (Rankers page, Backtest lab signal, stock page 'NiveshRL models' "
-      "tab). Its record is close to the Transformer's with far less compute.",
+      "tab). Point-in-time 2014-2026: IC 0.043 (t 3.8), top-20 strategy 16.3%/yr after costs vs 16.7% equal weight.",
   caveat="On this universe none of the deep rankers beat plain 12-1 momentum after costs; all results carry "
          "survivorship bias (today's index members applied to the past).",
   related=["lstm", "transformer", "momentum_model", "ranker_pct", "ic"], aliases=["FFNN", "FFNN ranker"],
@@ -569,8 +569,9 @@ E("lstm", "LSTM ranker", "Models",
 E("transformer", "Transformer ranker", "Models",
   "A 2-layer Transformer (the attention architecture behind modern language models) over the same return sequence.",
   how=_RANK_INPUTS,
-  use="The most consistent monthly signal in the app: positive IC in 64% of months, t-stat 4.7. Its edge lasts about a "
-      "quarter, so quarterly rebalancing keeps the return while cutting costs ~1.6%/yr.",
+  use="A consistent monthly ranking signal: on point-in-time members 2014-2026 IC 0.043 (t 3.7), beating 97% of "
+      "random portfolios with the same rules. But as a top-20 monthly strategy it earned 16.1%/yr after costs vs 16.7% "
+      "for equal weight (34.4% on today's members: survivorship bias). Quarterly rebalancing cuts costs ~1.6%/yr.",
   caveat="Trades a lot monthly; slow to train (≈75 min walk-forward on CPU).",
   related=["ffnn", "lstm", "consensus"], aliases=["TRANSFORMER", "Transformer ranker"],
   results=("rankers_summary.csv", "transformer"))
@@ -580,8 +581,8 @@ E("logreg", "Logistic regression (baseline)", "Models",
   related=["ffnn"], aliases=["LOGREG", "Logistic regression", "logreg"], results=("rankers_summary.csv", "logreg"))
 E("momentum_model", "Momentum 12-1 (baseline)", "Models",
   "No learning: rank stocks by their return from 12 months ago to 1 month ago (skipping the latest month).",
-  use="The bar every model must clear. On this universe it is the best monthly strategy before and after costs "
-      "(39.6% CAGR, Sharpe 1.43 for the top 20), though survivorship bias flatters it most.",
+  use="The bar every model must clear, and still the best monthly strategy on honest data: 19.3%/yr, Sharpe 0.64 for "
+      "the top 20 on point-in-time members 2014-2026 (39.8% on today's members: survivorship bias flatters it most).",
   related=["ret_1m", "transformer"], aliases=["MOMENTUM", "Momentum 12-1", "Momentum top-10", "momentum"],
   results=("rankers_summary.csv", "momentum"))
 E("nextday_model", "Next-day model (LightGBM + SeqNet ensemble)", "Models",
@@ -874,6 +875,80 @@ E("sentiment_test", "Sentiment forward test", "News & analysts",
       "news history, so it is measured forward as days accumulate.",
   caveat="Meaningless with a handful of days; read it after months of daily runs.",
   related=["finbert", "sentiment_adj"], aliases=["avg excess", "hit (beat median)"])
+E("range_model", "Who will move tomorrow (range model)", "Model outputs",
+  "A model of each stock's next-day trading range (high minus low, as a % of price). It ranks stocks by how much they "
+  "are likely to move tomorrow, not by direction.",
+  how="LightGBM on today's range, 5- and 20-day average range, ATR %, gap, absolute return, volume vs normal, NR7/NR4, "
+      "60-day volatility, VIX and NIFTY's move; walk-forward by year on a rolling 5-year window, point-in-time members. "
+      "'Expected range %ile' = where the stock ranks among all stocks (100% = biggest expected move).",
+  bands=[(0.5, "below-average mover", ""), (0.8, "above average", ""), (INF, "likely big mover", "")],
+  unit="pct",
+  use="Choosing what to watch intraday: volatility clusters, so range is far more predictable than direction (IC 0.51 vs "
+      "0.06 for direction). The top 20 averaged a 4.8% next-day range vs 3.1% for the average stock.",
+  caveat="Big movers move both ways: a range forecast is not a buy or sell signal.",
+  related=["atr_pct", "vol_60d", "intraday_agent"], results=("range_summary.csv", "model"),
+  aliases=["Expected range %ile", "Avg range (20d)", "Today's range", "Who will move", "Volume / avg",
+           "Who will move tomorrow (expected range, not direction)"])
+E("pattern_vcp", "VCP (volatility contraction pattern)", "Technicals",
+  "Three consecutive 15-day windows whose high-low range keeps shrinking (the last under 10%), with volume drying up, "
+  "above the 200-day average: sellers are running out.",
+  use="Measured on point-in-time NIFTY 200 members 2014-2026 (non-overlapping 20-day periods, before costs): +0.20% vs "
+      "the average stock, t 0.6: no reliable edge. It describes a setup; it does not predict one.",
+  caveat="Rules describe price structure; a pattern is a context, not a forecast. An earlier measurement against the "
+         "median stock showed large 'edges' that were an artefact of skewed returns (the average stock beats the median).",
+  related=["pattern_state", "pattern_squeeze", "breakout"], results=("patterns_edge.csv", "VCP (tightening)"),
+  aliases=["VCP (tightening)", "VCP"])
+E("pattern_flat", "Flat base", "Technicals",
+  "At least 5 weeks inside a range of 15% or less, closing within 5% of the top, above the 200-day average.",
+  use="Measured: -0.02% vs the average stock over 20 days (t -0.1): no edge.", related=["pattern_state"],
+  results=("patterns_edge.csv", "Flat base"), aliases=["Flat base"])
+E("pattern_box", "52-week-high box", "Technicals",
+  "Within 3% of the 52-week high with the last 20 days inside a box of 12% or less (Darvas-style).",
+  use="Measured: -0.14% vs the average stock over 20 days (t -0.4): no edge.", related=["from_52w_high"],
+  results=("patterns_edge.csv", "52-week-high box"), aliases=["52-week-high box"])
+E("pattern_nr7", "NR7 (narrowest range of 7 days)", "Technicals",
+  "Today's high-low range is the narrowest of the last 7 days: a quiet day.",
+  use="Measured: +0.04% vs the average stock over 20 days (t 0.2): no edge. For intraday traders it marks a quiet "
+      "stock: the next day's range is usually smaller, not bigger.", results=("patterns_edge.csv", "NR7 (quiet day)"),
+  related=["pattern_squeeze"],
+  aliases=["NR7 (quiet day)", "NR7"])
+E("pattern_pocket", "Pocket pivot", "Technicals",
+  "An up day whose volume beats every down day's volume of the previous 10 days, closing above the 10- and 50-day "
+  "averages.",
+  use="Measured: -0.02% vs the average stock over 20 days (t 0.0), beating the median only 43% of the time: no edge.",
+  results=("patterns_edge.csv", "Pocket pivot"), related=["vol_ratio"], aliases=["Pocket pivot"])
+E("pattern_squeeze", "Bollinger squeeze", "Technicals",
+  "Bollinger Bands (20 days, 2 standard deviations) sitting inside Keltner Channels (20 days, 1.5 x ATR): volatility is "
+  "unusually compressed, which tends to be followed by a larger move.",
+  use="Measured: +0.14% vs the average stock over 20 days (t 1.3): not statistically reliable.",
+  results=("patterns_edge.csv", "Bollinger squeeze"), related=["bb_width", "pattern_nr7"],
+  aliases=["Bollinger squeeze", "Volatility squeeze"])
+E("pattern_state", "Pivot distance and breakout state", "Technicals",
+  "Pivot = the 20-day high before today (the top of the base). Distance = close / pivot - 1.",
+  bands=[(-0.10, "early base", "well below the pivot"), (-0.03, "building", ""),
+         (0.0, "near pivot", "close to breaking out"), (0.03, "breakout", "just above the pivot"),
+         (0.08, "confirmed", ""), (INF, "extended", "far above the pivot: chasing risk")],
+  unit="pct", use="'Failed' = broke above the pivot within the last 10 days and is now more than 2% back below it.",
+  related=["pattern_flat", "pattern_vcp", "breakout"],
+  aliases=["Pivot distance", "Patterns (count)", "breakout_state", "Base near pivot"])
+E("delivery_pct", "Delivery %", "Technicals",
+  "The share of a day's traded quantity that was actually delivered into demat accounts (from NSE's daily bhavcopy), "
+  "rather than squared off intraday.",
+  bands=[(0.30, "mostly intraday", "speculative churn"), (0.50, "mixed", ""), (0.70, "high delivery", "investors taking "
+         "stock"), (INF, "very high", "")],
+  unit="pct", use="Rising delivery on up days and falling on down days is read as genuine buying. 'Up - down days' = "
+                  "average delivery on up days minus down days over the last 25 sessions.",
+  caveat="Measured only forward (the app keeps the last 25 sessions); no long history to test it against returns yet.",
+  related=["volume_phase", "vol_ratio"], aliases=["Delivery % (today)", "Delivery % (20d avg)", "Delivery: up − down days"])
+E("volume_phase", "Volume phase (Accumulation / Neutral / Distribution)", "Technicals",
+  "A 0-100 score of whether volume has been flowing in or out: 50 plus up/down volume (50 days, ±25), Chaikin money flow "
+  "(±15), accumulation minus distribution days (±10), OBV change (±10) and delivery on up vs down days (±10).",
+  bands=[(40, "Distribution", "more volume on down days"), (60, "Neutral", ""), (INF, "Accumulation", "more volume on up days")],
+  use="Describes recent volume behaviour.",
+  caveat="Measured on point-in-time members 2014-2026 (without delivery, non-overlapping 20-day periods): no edge. "
+         "Accumulation -0.07% and Distribution +0.17% vs the average stock (t -0.8 / 1.1). It cannot see real orders.",
+  related=["delivery_pct", "vol_ratio"], results=("volume_phase_edge.csv", "Accumulation"),
+  aliases=["Volume phase score", "vol_phase"])
 E("weight", "Portfolio weight", "Backtest & risk", "Share of the portfolio in each stock at the last rebalance.",
   unit="pct", aliases=["Weight"])
 E("rebalance", "Rebalance log", "Backtest & risk", "One row per rebalance: turnover traded, costs paid (₹), "

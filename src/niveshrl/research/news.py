@@ -13,7 +13,7 @@ import re
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timedelta, timezone
+from datetime import timedelta, timezone
 from email.utils import parsedate_to_datetime
 
 import pandas as pd

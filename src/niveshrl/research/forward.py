@@ -186,7 +186,8 @@ def historical_monitor(p: Panel, pred: pd.DataFrame, n: int = 10, step: int = 5,
 
 
 def sentiment_test(p: Panel) -> pd.DataFrame:
-    """FinBERT sentiment buckets on each saved day vs the next 1 and 5 trading days' return minus the median stock."""
+    """FinBERT sentiment buckets on each saved day vs the next 1 and 5 trading days' return minus the average stock
+    (not the median: returns are skewed, so 'beat the median' alone flatters every bucket)."""
     rows = []
     c = p.close
     for folder in sorted((ROOT / "data" / "daily").glob("20*")):
@@ -202,7 +203,7 @@ def sentiment_test(p: Panel) -> pd.DataFrame:
             if i + h >= len(c.index):
                 continue
             ret = c.iloc[i + h] / c.iloc[i] - 1
-            ex = ret - ret.median()
+            ex = ret - ret.mean()
             for t, v in s["sentiment_adj"].items():
                 if t in ex.index and np.isfinite(ex[t]) and np.isfinite(v):
                     rows.append({"date": d, "h": h, "bucket": "negative" if v < -0.2 else "positive" if v > 0.2 else "neutral",

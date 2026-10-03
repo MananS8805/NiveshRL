@@ -25,7 +25,8 @@ import pandas as pd
 from ..config import ROOT
 
 DAILY = ROOT / "data" / "daily"
-STEPS = ["prices", "technicals", "fundamentals", "news", "sentiment", "nextday", "monitor", "briefing"]
+STEPS = ["prices", "technicals", "delivery", "fundamentals", "news", "sentiment", "nextday", "range", "monitor",
+         "briefing"]
 
 
 def latest_dir() -> Path | None:
@@ -103,8 +104,20 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
     def technicals():
         ctx["frames"] = indicator_frames(p)
         ctx["tech"] = snapshot(ctx["frames"], p)
+        from .patterns import snapshot as pattern_snapshot
+        ctx["tech"] = ctx["tech"].join(pattern_snapshot(p, day))          # chart patterns, pivot distance, state
         ctx["tech"].to_parquet(out / "technicals.parquet")
         return f"{len(ctx['tech'])} stocks, {ctx['tech'].shape[1]} columns"
+
+    def delivery():
+        """NSE delivery % (bhavcopy, last 25 sessions, cached) and the volume phase per stock."""
+        from .delivery import recent, volume_phase
+        dl = recent(list(p.close.index[-25:]))
+        ph = volume_phase(p, dl)
+        ph.to_parquet(out / "delivery.parquet")
+        n_acc = int((ph["vol_phase"] == "Accumulation").sum())
+        n_dis = int((ph["vol_phase"] == "Distribution").sum())
+        return f"{len(dl)} bhavcopy days; {n_acc} accumulation / {n_dis} distribution"
 
     def fundamentals():
         from . import analyst
@@ -163,6 +176,18 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
         (out / "nextday_ytd.json").write_text(json.dumps(meta, indent=2))
         return f"P(up) for {len(last)} stocks; YTD AUC {meta.get('ensemble', meta.get('lgbm', {})).get('AUC', float('nan')):.3f}"
 
+    def range_():
+        """Tomorrow's expected trading range per stock (who will move), from a model trained on the last 5 years."""
+        from . import range_model as RM
+        X, y, _ = RM.build(p)
+        m = RM.fit_latest(X, y)
+        today = X.xs(day, level=0)
+        fc = pd.DataFrame({"range_pct": m.predict(today[RM.FEATS]), "adr20": today["adr20"], "range_1d": today["range_1d"],
+                           "atr_pct": today["atr_pct"], "vol_ratio": today["vol_ratio"], "nr7": today["nr7"]},
+                          index=today.index).sort_values("range_pct", ascending=False)
+        fc.to_parquet(out / "range.parquet")
+        return f"range forecast for {len(fc)} stocks; top: {', '.join(t.replace('.NS', '') for t in fc.index[:3])}"
+
     def monitor():
         from .monitor import monitor_list
         tech = ctx.get("tech") if "tech" in ctx else pd.read_parquet(out / "technicals.parquet")
@@ -203,8 +228,9 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
         (out / "habits.json").write_text(json.dumps(h, indent=2, default=str))
         return f"{len(b['narrative'])} briefing lines"
 
-    for name, fn in [("technicals", technicals), ("fundamentals", fundamentals), ("news", news),
-                     ("sentiment", sentiment), ("nextday", nextday), ("monitor", monitor), ("briefing", briefing)]:
+    for name, fn in [("technicals", technicals), ("delivery", delivery), ("fundamentals", fundamentals), ("news", news),
+                     ("sentiment", sentiment), ("nextday", nextday), ("range", range_), ("monitor", monitor),
+                     ("briefing", briefing)]:
         step(name, fn)
     # A partial run (e.g. --steps briefing) updates the day's status instead of replacing it.
     prev = json.loads((out / "status.json").read_text()) if (out / "status.json").exists() else {}
