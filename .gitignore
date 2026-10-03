@@ -27,3 +27,10 @@ data/*_test.parquet
 # desktop build outputs
 build/
 packaging/niveshrl.ico
+
+# personal portfolio data
+data/holdings.json
+data/journal.json
+data/*.bak
+data/intraday/
+data/nifty200_pit_panel.parquet

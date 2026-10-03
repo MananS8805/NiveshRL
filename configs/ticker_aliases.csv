@@ -1,0 +1,12 @@
+# Reviewed symbol -> Yahoo ticker aliases for former NIFTY 200 members that were renamed but are no
+# longer in today's list (so ISIN matching can't find them). Only pure renames whose Yahoo history is
+# the same company are listed. Rejected on purpose: SHRIRAMCIT->SHRIRAMFIN and TV18BRDCST->NETWORK18
+# (the new ticker carries a different merged entity's history); KPIT->BSOFT and JUBILANT->JUBLPHARMA
+# (unadjusted demergers in the history).
+symbol,yahoo,note
+AMARAJABAT,ARE&M.NS,Amara Raja Batteries renamed Amara Raja Energy & Mobility (2023)
+CENTURYTEX,ABREL.NS,Century Textiles renamed Aditya Birla Real Estate (2024)
+WELSPUNIND,WELSPUNLIV.NS,Welspun India renamed Welspun Living (2023)
+STRTECH,STLTECH.NS,Sterlite Technologies symbol change
+IBREALEST,EMBDL.NS,Indiabulls Real Estate renamed Equinox India Developments (2024)
+CASTROL,CASTROLIND.NS,Castrol India symbol change

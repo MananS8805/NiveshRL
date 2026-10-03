@@ -84,6 +84,10 @@ class LabPanel(Panel):
         self.run_btn.setObjectName("primary")
         self.run_btn.clicked.connect(self._run)
         row.addWidget(self.run_btn)
+        self.luck_btn = QPushButton("🎲 Luck test")
+        self.luck_btn.setToolTip("Run the same rules 200 times with random picks: is the selection better than luck?")
+        self.luck_btn.clicked.connect(self._luck)
+        row.addWidget(self.luck_btn)
         lay.addLayout(row)
         self.status = muted("")
         lay.addWidget(self.status)
@@ -213,3 +217,41 @@ class LabPanel(Panel):
                                "Performance by market regime (walk-forward labels):"))
             rl.addWidget(rtab)
             self.tabs.addTab(rw, "Risk")
+
+    def _luck(self) -> None:
+        spec = self.spec()
+        self.luck_btn.setEnabled(False)
+        self.status.setText(f"Luck test: {spec.name} vs 200 random-pick portfolios with the same rules…")
+
+        def work():
+            return bt.luck_test(data.panel(), data.scores(spec.signal), spec, n_paths=200, seed=0,
+                                regimes=data.regimes_daily())
+        run_async(work, self._show_luck, on_error=lambda m: (self.luck_btn.setEnabled(True),
+                                                             self.status.setText("Luck test failed: " + m.splitlines()[-1][:160])))
+
+    def _show_luck(self, r: dict) -> None:
+        self.luck_btn.setEnabled(True)
+        b, st, bh = r["bands"], r["strategy"], r["buy_hold"]
+        rows = {"This strategy": st, "Random picks: 5th percentile": b.loc[0.05].to_dict(),
+                "Random picks: median": b.loc[0.5].to_dict(), "Random picks: 95th percentile": b.loc[0.95].to_dict(),
+                "NIFTY 50 buy-and-hold": bh}
+        tab = pd.DataFrame(rows).T[["CAGR", "Sharpe", "MaxDD", "Return/DD"]]
+        t = FrameTable(fmt={"CAGR": "{:+.1%}", "Sharpe": "{:.2f}", "MaxDD": "{:.1%}", "Return/DD": "{:.2f}"},
+                       signed={"CAGR"})
+        t.model_.term_overrides = {"Return/DD": "return_dd"}
+        t.set_frame(tab)
+        pc = r["percentile"]
+        verdict = ("better than almost every random portfolio" if pc["Return/DD"] >= 0.95 else
+                   "better than most random portfolios" if pc["Return/DD"] >= 0.75 else
+                   "not clearly better than random picks")
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.addWidget(muted(
+            f"{r['n_paths']} portfolios with the same size, weights, caps, rebalance dates and costs, but random stocks "
+            f"from the same eligible set ({r['period'][0]:%b %Y} → {r['period'][1]:%b %Y}, seed {r['seed']}). The strategy "
+            f"beat {pc['CAGR']:.0%} of them on CAGR and {pc['Return/DD']:.0%} on return ÷ drawdown: "
+            f"{verdict}. Right-click any column for an explanation."))
+        lay.addWidget(t, 1)
+        i = self.tabs.addTab(w, "Luck test")
+        self.tabs.setCurrentIndex(i)
+        self.status.setText(f"Luck test done: beats {pc['Return/DD']:.0%} of random portfolios on return ÷ drawdown.")

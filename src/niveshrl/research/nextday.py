@@ -70,16 +70,20 @@ def build(p: Panel, frames: dict | None = None) -> DayData:
     f["log_turnover"] = np.log1p(f["turnover_cr"])
     sec = p.sectors.reindex(c.columns)
     f["ret_vs_sector_1d"] = f["ret_1d"] - f["ret_1d"].T.groupby(sec).transform("mean").T
+    # Point-in-time universe: indicators use each stock's full history, but ranks, labels and breadth
+    # are computed only among stocks that were index members that day.
+    m = p.member.reindex(index=c.index, columns=c.columns).fillna(False).to_numpy() if p.member is not None else None
+    mk = (lambda df: df.where(m)) if m is not None else (lambda df: df)
     ranked = []
     for k in STOCK_FEATS:
-        ranked.append((f[k].rank(axis=1, pct=True) - 0.5).to_numpy(np.float32))
+        ranked.append((mk(f[k]).rank(axis=1, pct=True) - 0.5).to_numpy(np.float32))
     stock = np.stack(ranked, -1)                                     # (T, N, Fs)
     b = p.bench.reindex(c.index)
     ma200 = c.rolling(200, min_periods=150).mean()
     mkt = pd.DataFrame({
         "vix": p.vix.reindex(c.index) / 100,
         "vix_chg_5d": np.log(p.vix.reindex(c.index)).diff(5),
-        "breadth": (c > ma200).where(ma200.notna()).mean(axis=1),
+        "breadth": mk((c > ma200).where(ma200.notna())).mean(axis=1),
         "nifty_ret_1d": b.pct_change(fill_method=None),
         "nifty_ret_5d": b / b.shift(5) - 1,
     }, index=c.index)
@@ -87,12 +91,14 @@ def build(p: Panel, frames: dict | None = None) -> DayData:
         mkt[f"dow_{d}"] = (c.index.dayofweek == d).astype(float)
     M = mkt[MARKET_FEATS].to_numpy(np.float32)                      # (T, Fm)
     X = np.concatenate([stock, np.repeat(M[:, None, :], len(c.columns), 1)], -1)
-    nxt = (c.shift(-1) / c - 1).to_numpy(np.float32)
+    nxt = mk(c.shift(-1) / c - 1).to_numpy(np.float32)
     with np.errstate(all="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)          # the last day has no next-day prices
         med = np.nanmedian(nxt, axis=1, keepdims=True)
     y = np.where(np.isfinite(nxt), (nxt > med).astype(np.float32), np.nan)
     valid = np.isfinite(stock[..., :5]).all(-1) & np.isfinite(c.to_numpy())
+    if m is not None:
+        valid &= m
     return DayData(dates=c.index, tickers=list(c.columns), X=X, y=y, ret_next=nxt, valid=valid)
 
 

@@ -1,0 +1,11 @@
+# Reviewed one-day moves that look like a split/bonus ratio (e.g. -33% ~ a 3:2 bonus) but are genuine
+# price crashes. research/data.py never "repairs" these: adjusting them would hide real losses, exactly
+# the bias survivorship-free testing exists to remove.
+date,ticker,note
+2019-01-25,DISHTV.NS,Essel group pledge crisis crash (-33%)
+2012-04-10,IGL.NS,PNGRB tariff order crash (-34%)
+2019-02-04,RCOM.NS,Insolvency filing crash (-35%)
+2019-02-06,RELINFRA.NS,ADAG group crash (-32%)
+2019-02-04,RPOWER.NS,ADAG group crash (-35%)
+2024-01-23,ZEEL.NS,Sony merger called off (-34%)
+2013-02-28,SUZLON.NS,Results-day crash on 349M shares (-34%); volume did not scale like a bonus

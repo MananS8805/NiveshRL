@@ -174,6 +174,8 @@ def run_backtest(p: Panel, scores: pd.DataFrame, spec: StrategySpec,
     reb_pos = days.get_indexer(reb_dates)
     # Everything the rebalance step needs, as arrays aligned to the rebalance dates.
     S = scores.reindex(index=reb_dates, columns=cols).to_numpy()
+    if p.member is not None:                          # point-in-time universe: only index members on that date
+        S = np.where(p.member.reindex(index=reb_dates, columns=cols).fillna(False).to_numpy(), S, np.nan)
     OK = close.loc[reb_dates].notna().to_numpy() & np.isfinite(S)
     VOL = vol63.loc[reb_dates].to_numpy()
     SIG = np.nan_to_num(sigma20.loc[reb_dates].to_numpy(), nan=0.02)
@@ -316,3 +318,42 @@ def rolling_sharpe(nav: pd.Series, window: int = 252, rf: float = 0.065) -> pd.S
     r = nav.pct_change()
     ex = r - ((1 + rf) ** (1 / 252) - 1)
     return ex.rolling(window).mean() / ex.rolling(window).std() * np.sqrt(252)
+
+
+def _nav_stats(nav: pd.Series) -> dict:
+    years = max((nav.index[-1] - nav.index[0]).days / 365.25, 1e-9)
+    cagr = float(nav.iloc[-1] / nav.iloc[0]) ** (1 / years) - 1
+    dd = float((nav / nav.cummax() - 1).min())
+    r = nav.pct_change().dropna()
+    ex = r - ((1.065) ** (1 / 252) - 1)
+    sharpe = float(ex.mean() / ex.std() * np.sqrt(252)) if ex.std() > 0 else float("nan")
+    return {"CAGR": cagr, "MaxDD": dd, "Sharpe": sharpe, "Return/DD": cagr / abs(dd) if dd < 0 else float("nan")}
+
+
+def luck_test(p: Panel, scores: pd.DataFrame, spec: StrategySpec, n_paths: int = 200, seed: int = 0,
+              regimes: pd.Series | None = None) -> dict:
+    """Is the strategy's selection better than luck?
+
+    Re-runs the *same* rules (portfolio size, weighting, caps, rebalance dates, costs, overlays) ``n_paths``
+    times, but at every rebalance picks stocks at random from the same eligible set (stocks the signal
+    scored that date). Returns the random paths' metrics, their 5/50/95% bands, the strategy's percentile
+    among them, and NIFTY buy-and-hold over the same days. Reproducible with ``seed``.
+    """
+    real = run_backtest(p, scores, spec, regimes=regimes)
+    rng = np.random.default_rng(seed)
+    eligible = scores.notna()
+    rspec = StrategySpec(**{**spec.to_dict(), "weighting": "equal" if spec.weighting == "score" else spec.weighting,
+                            "name": "random"})
+    rows = []
+    for _ in range(n_paths):
+        rnd = pd.DataFrame(rng.random(scores.shape), index=scores.index, columns=scores.columns).where(eligible)
+        rows.append(_nav_stats(run_backtest(p, rnd, rspec, regimes=regimes).nav))
+    paths = pd.DataFrame(rows)
+    strat = _nav_stats(real.nav)
+    bench = benchmark_nav(p, str(real.nav.index[0].date()), str(real.nav.index[-1].date()))
+    bands = paths.quantile([0.05, 0.5, 0.95])
+    pct = {k: float((paths[k] < strat[k]).mean()) if k != "MaxDD" else float((paths[k] < strat[k]).mean())
+           for k in strat}
+    return {"strategy": strat, "paths": paths, "bands": bands, "percentile": pct,
+            "buy_hold": _nav_stats(bench), "nav": real.nav, "n_paths": n_paths, "seed": seed,
+            "period": (real.nav.index[0], real.nav.index[-1])}

@@ -78,6 +78,8 @@ def build_rank_data(p: Panel) -> RankData:
         ok = P_t.notna() & P_m[13].notna() & (win.notna().sum() >= 18)
         for k in range(1, 13):
             ok &= P_m[k].notna()
+        if p.member is not None:                     # point-in-time universe: only that month's index members
+            ok &= p.member.loc[t].reindex(ok.index).fillna(False)
         if ok.sum() < 20:
             continue
         tick = ok[ok].index

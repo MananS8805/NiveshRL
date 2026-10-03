@@ -23,22 +23,25 @@ ap.add_argument("--models", nargs="+", default=ALL_MODELS, choices=ALL_MODELS)
 ap.add_argument("--window", type=int, default=8, help="rolling training window, years")
 ap.add_argument("--first-year", type=int, default=2012)
 ap.add_argument("--seed", type=int, default=0)
+ap.add_argument("--universe", choices=["current", "pit"], default="current",
+                help="pit = point-in-time NIFTY 200 members (survivorship-free); writes <model>_pit files")
 args = ap.parse_args()
+sfx = "_pit" if args.universe == "pit" else ""
 
-rd = build_rank_data(load_panel())
+rd = build_rank_data(load_panel(universe=args.universe))
 cfg = TrainConfig(window_years=args.window, seed=args.seed)
 rows = {}
 for name in args.models:
     t = time.time()
     pred = walk_forward(rd, name, args.first_year, cfg)
-    save_predictions(name, pred)
+    save_predictions(name + sfx, pred)
     rows[name] = evaluate.summary(pred) | {"Train time (s)": round(time.time() - t)}
     print(f"{name}: done in {time.time() - t:.0f}s", flush=True)
 
 table = pd.DataFrame(rows).T
 out = Path("report/results")
 out.mkdir(parents=True, exist_ok=True)
-summary_path = out / "rankers_summary.csv"
+summary_path = out / f"rankers_summary{sfx}.csv"
 if summary_path.exists():  # keep rows for models not retrained this time
     old = pd.read_csv(summary_path, index_col=0)
     table = pd.concat([old.drop(index=table.index, errors="ignore"), table])

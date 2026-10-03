@@ -21,6 +21,7 @@ from ..config import ROOT
 UNIVERSE_CSV = ROOT / "data" / "ind_nifty200list.csv"
 PANEL_PATH = ROOT / "data" / "nifty200_panel.parquet"
 CONTEXT_PATH = ROOT / "data" / "nifty200_context.parquet"
+PIT_PANEL_PATH = ROOT / "data" / "nifty200_pit_panel.parquet"   # current + former members (survivorship-free tests)
 START = "2006-01-01"
 
 
@@ -35,6 +36,7 @@ class Panel:
     open: pd.DataFrame | None = None   # adjusted with the same factor as close (None on old caches)
     high: pd.DataFrame | None = None
     low: pd.DataFrame | None = None
+    member: pd.DataFrame | None = None  # point-in-time index membership (True = in the index that day); None = all
 
     @property
     def tickers(self) -> list[str]:
@@ -65,6 +67,7 @@ def _download(tickers: list[str], start: str, end: str | None) -> pd.DataFrame:
 
 SPLIT_RATIOS = np.array([1 / 10, 1 / 5, 1 / 4, 1 / 3, 1 / 2, 2 / 3, 3 / 2, 2, 3, 4, 5, 10])
 ACTIONS_CSV = ROOT / "configs" / "corporate_actions.csv"
+GENUINE_CSV = ROOT / "configs" / "genuine_moves.csv"
 
 
 def adjust_corporate_actions(close: pd.DataFrame, min_move: float = 0.30, tol: float = 0.025,
@@ -81,6 +84,10 @@ def adjust_corporate_actions(close: pd.DataFrame, min_move: float = 0.30, tol: f
     """
     close = close.copy()
     events = []
+    genuine = set()
+    if GENUINE_CSV.exists():                         # reviewed real crashes that merely look like a ratio
+        g = pd.read_csv(GENUINE_CSV, comment="#")
+        genuine = {(pd.Timestamp(d).date(), t) for d, t in zip(g["date"], g["ticker"])}
     ratio = close / close.shift(1)
     for t in close.columns:
         r = ratio[t]
@@ -88,7 +95,7 @@ def adjust_corporate_actions(close: pd.DataFrame, min_move: float = 0.30, tol: f
         for d, x in cand.items():
             rel = np.abs(SPLIT_RATIOS - x) / SPLIT_RATIOS
             limit = wide_tol if (x >= 1.9 or x <= 0.52) else tol
-            if rel.min() < limit:
+            if rel.min() < limit and (d.date(), t) not in genuine:
                 events.append((d.date(), t, f"ratio {x:.3f}"))
     manual = pd.read_csv(ACTIONS_CSV, comment="#") if ACTIONS_CSV.exists() else pd.DataFrame(columns=["date", "ticker"])
     for _, row in manual.iterrows():
@@ -129,16 +136,29 @@ def clean_close(close: pd.DataFrame, volume: pd.DataFrame, jump: float = 0.25) -
     return close, repaired
 
 
-def load_panel(refresh: bool = False, end: str | None = None) -> Panel:
+def load_panel(refresh: bool = False, end: str | None = None, universe: str = "current") -> Panel:
+    """``universe="current"``: today's NIFTY 200 (the app's default; survivorship-biased in backtests).
+    ``universe="pit"``: today's members plus every former member from the archived snapshots, with a
+    point-in-time ``member`` mask (see research/constituents.py) for survivorship-free tests."""
     uni = load_universe()
-    if refresh or not PANEL_PATH.exists():
+    path = PANEL_PATH
+    member_h = None
+    if universe == "pit":
+        from . import constituents as cs
+        member_h = cs.history()
+        extra = cs.all_tickers(member_h).reset_index().rename(columns={"index": "ticker"})
+        extra = extra[~extra["ticker"].isin(uni["ticker"])]
+        uni = pd.concat([uni, extra[["ticker", "name", "sector"]]], ignore_index=True)
+        path = PIT_PANEL_PATH
+    if refresh or not path.exists():
         raw = _download(uni["ticker"].tolist(), START, end)
         pd.concat({"close": raw["Close"], "volume": raw["Volume"], "open": raw["Open"], "high": raw["High"],
-                   "low": raw["Low"]}, axis=1).to_parquet(PANEL_PATH)
-        ctx = _download(["^NSEI", "^INDIAVIX"], START, end)["Close"]
-        ctx.columns = ["bench" if c == "^NSEI" else "vix" for c in ctx.columns]
-        ctx.to_parquet(CONTEXT_PATH)
-    raw = pd.read_parquet(PANEL_PATH)
+                   "low": raw["Low"]}, axis=1).to_parquet(path)
+        if universe == "current" or not CONTEXT_PATH.exists():
+            ctx = _download(["^NSEI", "^INDIAVIX"], START, end)["Close"]
+            ctx.columns = ["bench" if c == "^NSEI" else "vix" for c in ctx.columns]
+            ctx.to_parquet(CONTEXT_PATH)
+    raw = pd.read_parquet(path)
     ctx = pd.read_parquet(CONTEXT_PATH)
     close, volume = raw["close"], raw["volume"]
     close = close.loc[:, close.notna().sum() > 250]           # drop tickers with < ~1 year of data
@@ -156,8 +176,12 @@ def load_panel(refresh: bool = False, end: str | None = None) -> Panel:
             ohl[k] = (raw[k].reindex(index=close.index, columns=close.columns) * factor).where(close.notna())
         ohl["high"] = np.maximum(ohl["high"], close).where(close.notna())
         ohl["low"] = np.minimum(ohl["low"], close).where(close.notna())
-    meta = uni.set_index("ticker").reindex(close.columns)
+    meta = uni.drop_duplicates("ticker").set_index("ticker").reindex(close.columns)
+    member = None
+    if universe == "pit":
+        from . import constituents as cs
+        member = cs.member_mask(close.index, list(close.columns), member_h, backfill=True)
     return Panel(close=close, volume=volume, sectors=meta["sector"].fillna("Other"),
                  names=meta["name"].fillna(pd.Series(close.columns, index=close.columns)),
                  bench=ctx["bench"].reindex(close.index).ffill(),
-                 vix=ctx["vix"].reindex(close.index).ffill(), **ohl)
+                 vix=ctx["vix"].reindex(close.index).ffill(), member=member, **ohl)

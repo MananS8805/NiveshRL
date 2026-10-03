@@ -21,18 +21,21 @@ warnings.filterwarnings("ignore")
 ap = argparse.ArgumentParser()
 ap.add_argument("--first-year", type=int, default=2015)
 ap.add_argument("--models", nargs="+", default=["lgbm", "seq", "logreg"])
+ap.add_argument("--universe", choices=["current", "pit"], default="current",
+                help="pit = point-in-time NIFTY 200 members (survivorship-free); writes *_pit files")
 args = ap.parse_args()
+sfx = "_pit" if args.universe == "pit" else ""
 
 t = time.time()
-dd = nd.build(load_panel())
+dd = nd.build(load_panel(universe=args.universe))
 print(f"features {dd.X.shape} in {time.time() - t:.0f}s", flush=True)
 pred = nd.walk_forward(dd, args.first_year, models=tuple(args.models))
 PRED_DIR.mkdir(parents=True, exist_ok=True)
-pred.to_parquet(PRED_DIR / "nextday.parquet")
+pred.to_parquet(PRED_DIR / f"nextday{sfx}.parquet")
 cols = [m for m in ["ensemble", "lgbm", "seq", "logreg", "reversal"] if m in pred]
 table = pd.DataFrame({m: nd.evaluate(pred, m) for m in cols}).T
 Path("report/results").mkdir(parents=True, exist_ok=True)
-table.to_csv("report/results/nextday_summary.csv")
+table.to_csv(f"report/results/nextday_summary{sfx}.csv")
 pd.set_option("display.float_format", lambda x: f"{x:.4f}")
 print(f"\nout-of-sample {pred.index.get_level_values(0).min().date()} -> {pred.index.get_level_values(0).max().date()} "
       f"({time.time() - t:.0f}s total)")

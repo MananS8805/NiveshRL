@@ -93,6 +93,8 @@ class StockPanel(Panel):
         sl.addWidget(self.stats)
         sl.addStretch(1)
         self.tabs.addTab(sw, "Key stats")
+        self.plan_view = QTextBrowser()
+        self.tabs.addTab(self.plan_view, "Trade plan")
         self.news = FrameTable(fmt={"Score": "{:+.2f}"}, signed={"Score"})
         self.news.model_.term_overrides = {"Score": "finbert"}
         self.news.doubleClicked.connect(self._open_news)
@@ -140,6 +142,7 @@ class StockPanel(Panel):
         self._news()
         self._technicals()
         self._models()
+        self._plan()
         for t in self.stmts.values():
             t.set_frame(pd.DataFrame())
         self.stats.set_items([])
@@ -329,6 +332,33 @@ class StockPanel(Panel):
             rows.append({"Group": group, "Indicator": label, "Value": val,
                          "Signal": "" if missing or k not in SIGNALS else SIGNALS[k](v)})
         self.tech.set_frame(pd.DataFrame(rows))
+
+    def _plan(self) -> None:
+        from ...research.plans import make_plan
+        from .desk import current_risk_state, desk_settings
+        st, rs = desk_settings(), current_risk_state()
+        pl = make_plan(data.panel(), self.ticker, st["capital"], st["risk_pct"], rs.multiplier)
+        if pl is None:
+            self.plan_view.setHtml("<p>Not enough price history for a plan.</p>")
+            return
+        A, M = theme.AMBER, theme.MUTED
+        rows = [("Entry (last close)", f"₹{pl.entry:,.2f}", "you'd buy at the next open"),
+                ("Stop", f"₹{pl.stop:,.2f}", f"{pl.stop_pct:.1%} below entry · {pl.risk_per_share / pl.atr:.1f}× ATR"),
+                ("R (risk per share)", f"₹{pl.risk_per_share:,.2f}", f"ATR(14) ₹{pl.atr:,.2f}"),
+                ("T1 = 1.5R", f"₹{pl.t1:,.2f}", "book about a third, move the stop to entry"),
+                ("T2 = 2.5R", f"₹{pl.t2:,.2f}", f"then trail the rest ₹{pl.trail_atr:,.2f} (3× ATR) under the highest close"),
+                ("Quantity", f"{pl.qty:,}", f"₹{pl.position_value:,.0f} invested"),
+                ("Rupee risk", f"₹{pl.rupee_risk:,.0f}", f"{pl.risk_pct:.2%} of ₹{pl.capital:,.0f} × {pl.multiplier:g}"),
+                ("At T1 / T2", f"₹{pl.qty * (pl.t1 - pl.entry):+,.0f} / ₹{pl.qty * (pl.t2 - pl.entry):+,.0f}", "before costs")]
+        tr = "".join(f"<tr><td style='color:{M};padding:3px 10px'>{a}</td><td style='padding:3px 10px'><b>{b}</b></td>"
+                     f"<td style='color:{M};padding:3px 10px'>{c}</td></tr>" for a, b, c in rows)
+        notes = "".join(f"<li>{n}</li>" for n in pl.notes)
+        self.plan_view.setHtml(
+            f"<h3 style='color:{A}'>Swing plan for {self.ticker.replace('.NS', '')}</h3><table>{tr}</table>"
+            f"<p><b style='color:{A}'>Market risk state:</b> {rs.state} (×{rs.multiplier:g}): {'; '.join(rs.reasons)}</p>"
+            + (f"<ul>{notes}</ul>" if notes else "")
+            + f"<p style='color:{M}'>Capital and risk % are set in My desk. Rules, not a forecast or advice; nothing is "
+              "ordered. Gaps can fill beyond the stop.</p>")
 
     def _models(self) -> None:
         t = self.ticker

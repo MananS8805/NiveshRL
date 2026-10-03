@@ -728,6 +728,79 @@ E("avg_holdings", "Average holdings", "Backtest & risk", "Average number of stoc
 E("var", "VaR / CVaR (95%)", "Backtest & risk",
   "Value at Risk: the daily loss exceeded on only 5% of days. CVaR: the average loss on those worst 5% days.",
   unit="pct", use="Sizing for bad days.", related=["max_drawdown"], aliases=["VaR95", "CVaR95"])
+E("luck_test", "Luck test (random-pick portfolios)", "Backtest & risk",
+  "Runs the same strategy rules (number of stocks, weights, caps, rebalance dates, costs, overlays) hundreds of times "
+  "but picks the stocks at random from the same eligible set each time. The spread of those results is what luck alone "
+  "produces.",
+  how="200 paths, seed 0 (reproducible). The strategy's percentile = share of random portfolios it beat.",
+  bands=[(0.5, "worse than typical luck", ""), (0.75, "inside the luck range", "not clearly better than random"),
+         (0.95, "better than most luck", ""), (INF, "better than almost all luck", "selection very likely adds value")],
+  unit="pct", use="Separates skill from a rising market: a strategy can beat NIFTY simply because its universe did.",
+  caveat="Still shares the universe's biases; read it on point-in-time members (see the Survivorship report).",
+  related=["return_dd", "cagr", "survivorship"], aliases=["Luck test", "Beats % of random (CAGR)",
+                                                        "Beats % of random (Return/DD)"])
+E("return_dd", "Return ÷ drawdown", "Backtest & risk",
+  "CAGR divided by the maximum drawdown (as a positive number): return earned per unit of the worst fall.",
+  bands=[(0.3, "poor", "NIFTY buy-and-hold is about 0.3 over 2014–2026"), (0.6, "fair", ""), (1.0, "good", ""),
+         (INF, "excellent", "")],
+  use="Compares a strategy that is sometimes in cash with an always-invested index fairly.",
+  related=["calmar", "max_drawdown", "luck_test"], aliases=["Return/DD"])
+E("survivorship", "Survivorship bias and point-in-time members", "Backtest & risk",
+  "Testing on today's index members only sees companies that survived and stayed in the index; those that collapsed or "
+  "were demoted are missing, which inflates every backtest (momentum most).",
+  how="This app rebuilds NIFTY 200 membership from 9 archived NSE snapshots (2014–2026). A stock counts only from the "
+      "snapshot it appears in (stale between snapshots, never anticipated); renames are matched by ISIN. Results are "
+      "shown for both universes over the same months in report/results/survivorship.md.",
+  caveat="About 7% of member-days have no Yahoo prices (mostly delisted or merged companies), so the point-in-time "
+         "results are still slightly flattered. Delisted holdings are carried at their last price.",
+  related=["luck_test", "cagr"], aliases=["point-in-time members", "today's members (biased)", "Survivorship report"])
+E("trade_plan", "Trade plan (entry, stop, targets)", "Desk",
+  "A rule-based plan for one stock: where to buy, where you are wrong (stop), where to take profit.",
+  how="Entry = last close (you'd buy at the next open). Stop just under the lowest low of the last 10 days, kept between "
+      "2× and 2.5× ATR(14) below entry and never more than 8% away. R = entry − stop. T1 = entry + 1.5R, "
+      "T2 = entry + 2.5R. Suggested: book a third at T1, move the stop to entry, trail the rest 3 × ATR under the highest "
+      "close.",
+  use="Turns a watch list into a concrete, risk-limited order and tells you in advance what a loss costs.",
+  caveat="Rules, not predictions: on gaps the stop can fill worse than planned. Not advice; nothing is ordered.",
+  related=["r_multiple", "position_size", "risk_state", "atr_pct"],
+  aliases=["Entry", "Stop", "T1", "T2", "Trade plan", "Capital planner"])
+E("stop_pct", "Stop distance %", "Desk", "How far the stop is below entry, as a % of the entry price.",
+  unit="pct", bands=[(0.03, "tight", "small loss per share; easier to get stopped by noise"),
+                     (0.06, "normal", ""), (0.08, "wide", "fewer shares for the same rupee risk")],
+  related=["trade_plan"], aliases=["Stop %"])
+E("position_size", "Position size", "Desk",
+  "How many shares to buy so that hitting the stop loses a fixed share of your capital.",
+  how="Qty = capital × risk% × risk-state multiplier ÷ R, rounded down, and never more than 20% of capital in one stock. "
+      "'₹ risk' = Qty × R: what you lose if the stop is hit.",
+  use="Keeps every loss the same size whatever the stock's price or volatility; the single most important risk rule.",
+  related=["trade_plan", "risk_state"], aliases=["Qty", "Amount", "₹ risk", "₹ at T1", "₹ at T2", "Positions",
+                                                  "Invested", "Total risk", "At T1", "At T2", "Risk per trade",
+                                                  "Max positions"])
+E("risk_state", "Market risk state", "Desk",
+  "Whether to trade at normal or half risk today.",
+  how="Half risk (×0.5) when NIFTY is below its 200-day average, when fewer than half of NIFTY 200 stocks are above "
+      "their 50-day average (narrow market), or in a Stress regime; otherwise normal (×1).",
+  use="Sizes down automatically in weak, narrow markets. It never changes which stocks qualify, only how much you buy.",
+  related=["position_size", "breadth", "regime"], aliases=["Risk state", "Risk multiplier"])
+E("r_multiple", "R multiple (after costs)", "Desk",
+  "A trade's result measured in units of what you risked: (exit − entry) ÷ (entry − stop), after delivery costs.",
+  bands=[(-1.2, "worse than the stop", "a gap or slippage past the stop"), (0, "loss", ""), (1, "small win", ""),
+         (2, "good win", ""), (INF, "big win", "")],
+  use="Compares trades of any size or price fairly; average R × number of trades is your edge.",
+  related=["trade_plan", "hit_rate"], aliases=["R (after costs)", "Average R", "Median R", "Total R", "Closed trades",
+                                                "Win rate"])
+E("exit_line", "Holding exit line", "Desk",
+  "A trailing exit for stocks you already own: close − 3 × ATR(14), which is only ever raised, never lowered.",
+  bands=[], use="Call: EXIT when the price is at or below it; REVIEW when the stock is on tomorrow's 'watch for "
+                "weakness' list; otherwise HOLD.",
+  caveat="A mechanical trailing stop, not a forecast. Taxes (STCG/LTCG) apply when you sell.",
+  related=["atr_pct", "trade_plan"], aliases=["Exit line", "To exit line", "Call", "EXIT calls"])
+E("holdings", "Holdings (Kite import)", "Desk",
+  "Your portfolio imported from a Zerodha Kite holdings CSV (Portfolio → Holdings → Download), stored only on this PC.",
+  related=["exit_line"], aliases=["Holdings", "Avg cost", "P&L", "P&L %", "Unrealised P&L", "Qty (holding)"])
+E("journal", "Trade journal", "Desk", "Trades you actually took, with entry, stop, exit and quantity; scored in R "
+  "after costs exactly like the backtests. It never feeds any model.",
+  related=["r_multiple"], aliases=["Entry date", "Exit date", "Exit"])
 E("weight", "Portfolio weight", "Backtest & risk", "Share of the portfolio in each stock at the last rebalance.",
   unit="pct", aliases=["Weight"])
 E("rebalance", "Rebalance log", "Backtest & risk", "One row per rebalance: turnover traded, costs paid (₹), "
@@ -872,7 +945,7 @@ _build_index()
 IGNORE = {_norm(x) for x in ["Company", "Sector", "Stock", "Note", "Headline", "Source", "When", "Group", "Indicator",
                              "Value", "Name", "Action", "Shares", "Price (Rs)", "Amount (Rs)", "", "Year",
                              "Trading day", "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct",
-                             "Nov", "Dec", "Full year", "Volume (stock)"]}
+                             "Nov", "Dec", "Full year", "Volume (stock)", "Notes"]}
 
 
 def lookup(label: str) -> Entry | None:

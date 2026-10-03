@@ -83,7 +83,8 @@ class TodayPanel(Panel):
             self.lists[name] = t
             mon.addLayout(box)
         wl_.addLayout(mon, 1)
-        wl_.addWidget(muted("Click a stock to open its chart, news and technicals."))
+        wl_.addWidget(muted("Click a stock to open its chart, news and technicals. Stop / T1 / Qty are trade plans sized "
+                            "for your capital and risk in My desk (weakness list: the level where holders should exit)."))
         self.tabs.addTab(watch, "Watch tomorrow")
 
         # --- tab 3: market habits
@@ -151,9 +152,21 @@ class TodayPanel(Panel):
             "(51-54% is a good result for next-day direction). Daily turnover at Indian costs (~0.25% round trip) "
             "usually eats the edge.")
         if mon is not None:
+            from .desk import current_risk_state, desk_settings
+            from ...research.plans import plans_for
+            st, rs = desk_settings(), current_risk_state()
             for name, tab in self.lists.items():
                 df = mon[mon["list"] == name].head(self.n.value())
-                view = pd.DataFrame({"Score": df["score"], "P(up)": df["prob"], "Why": df["reasons"]})
+                side = "long" if name == "watch for strength" else "exit"
+                pl = plans_for(data.panel(), list(df.index), st["capital"], st["risk_pct"], rs.multiplier, side=side)
+                view = pd.DataFrame({"Score": df["score"], "P(up)": df["prob"]})
+                if len(pl):
+                    view["Stop"] = pl["stop"].reindex(view.index)
+                    view["T1"] = pl["t1"].reindex(view.index)
+                    if side == "long":
+                        view["Qty"] = pl["qty"].reindex(view.index)
+                view["Why"] = df["reasons"]
+                tab.model_.fmt.update({"Stop": "₹{:,.2f}", "T1": "₹{:,.2f}", "Qty": "{:,.0f}"})
                 tab.set_frame(view)
         # habits
         if hab:
