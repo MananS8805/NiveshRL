@@ -348,12 +348,12 @@ def luck_test(p: Panel, scores: pd.DataFrame, spec: StrategySpec, n_paths: int =
     for _ in range(n_paths):
         rnd = pd.DataFrame(rng.random(scores.shape), index=scores.index, columns=scores.columns).where(eligible)
         rows.append(_nav_stats(run_backtest(p, rnd, rspec, regimes=regimes).nav))
-    paths = pd.DataFrame(rows)
     strat = _nav_stats(real.nav)
+    paths = pd.DataFrame(rows, columns=list(strat))
     bench = benchmark_nav(p, str(real.nav.index[0].date()), str(real.nav.index[-1].date()))
     bands = paths.quantile([0.05, 0.5, 0.95])
-    pct = {k: float((paths[k] < strat[k]).mean()) if k != "MaxDD" else float((paths[k] < strat[k]).mean())
-           for k in strat}
+    # share of random paths the strategy beat (for MaxDD, "beat" = a shallower drawdown, i.e. a larger value)
+    pct = {k: float((paths[k] < strat[k]).mean()) if len(paths) else float("nan") for k in strat}
     return {"strategy": strat, "paths": paths, "bands": bands, "percentile": pct,
             "buy_hold": _nav_stats(bench), "nav": real.nav, "n_paths": n_paths, "seed": seed,
             "period": (real.nav.index[0], real.nav.index[-1])}

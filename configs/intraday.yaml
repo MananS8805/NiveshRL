@@ -1,0 +1,53 @@
+# Intraday paper-trading agent. Paper only: nothing here ever places an order.
+# Every number is used by src/niveshrl/intraday/*. Change them here, not in code.
+
+pool: 100000                  # virtual capital in Rs (editable in the app)
+leverage: 1.0                 # 1 = no leverage (default). The app can toggle 1x-5x (MIS-style exposure).
+max_leverage: 5.0
+
+guardrails:                   # fixed rules the learner can never change
+  risk_per_trade: 0.01        # max share of the pool lost if a stop is hit
+  max_open_positions: 5
+  daily_loss_stop: 0.03       # stop opening trades after the pool is down 3% on the day
+  square_off: "15:15"         # all positions closed by this time
+  no_new_after: "14:45"
+  max_volume_share: 0.02      # position <= 2% of the signal bar's traded volume
+  min_stop_pct: 0.0015        # stops closer than 0.15% are widened
+  max_stop_pct: 0.01          # stops wider than 1% -> no trade
+  target_r: 2.0               # target = 2R
+  cost_r_max: 0.20            # skip a signal whose round-trip costs would exceed 0.2R (tight stops: costs eat the edge)
+
+universe:
+  min_turnover_cr: 10         # 20-day average traded value, Rs crore
+  min_price: 50
+  refresh_days: 7
+  in_play_top: 40             # stocks followed with 1-minute candles
+  gap_min: 0.01               # in play: |gap| >= 1% ...
+  volume_pace_min: 1.5        # ... or volume running >= 1.5x its normal pace
+  range_used_min: 0.25        # ... and today's range already >= 25% of the average daily range
+
+setups: [orb, vwap, ema_pullback, pdh_pdl, gap_and_go, nr7]
+
+costs:                        # NSE intraday (MIS) equity, per order / per trade
+  brokerage_flat: 20.0        # Rs per executed order ...
+  brokerage_pct: 0.0003       # ... or 0.03%, whichever is lower (discount broker)
+  stt_sell: 0.00025           # STT 0.025% on the sell side
+  exchange: 0.0000297         # NSE transaction charge 0.00297%
+  sebi: 0.000001              # Rs 10 per crore
+  stamp_buy: 0.00003          # stamp duty 0.003% on the buy side
+  gst: 0.18                   # on brokerage + exchange + SEBI
+  slippage: 0.0003            # 0.03% per side, on top of next-bar-open fills
+
+tax:
+  slab_rate: 0.30             # intraday profit = speculative business income, taxed at your slab
+  cess: 0.04                  # health & education cess on the tax
+  # speculative losses can only be set off against speculative gains (same financial year / carried 4 years)
+
+learning:
+  reward_bonus_day_return: 0.10   # the user's target: a day ending >= +10% of the pool earns a bonus
+  reward_bonus_r: 0.5             # bonus added to each of that day's taken trades (in R)
+  min_trades_bucket: 20           # a context bucket needs this many outcomes before it can SKIP
+  half_below_r: 0.0               # posterior mean R below this -> HALF; clearly negative -> SKIP
+  skip_t: -2.0                    # SKIP only when the bucket's t-stat is below this
+  ml_min_prob: 0.40               # ML scorer: below this P(target before stop) -> SKIP
+  verdict_after_trades: 100       # no performance verdict is shown before this many closed trades

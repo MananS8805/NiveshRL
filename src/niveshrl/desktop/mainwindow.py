@@ -27,6 +27,7 @@ from ..livefeed import IST, Feed, market_open
 from . import data, theme
 from .panels import Panel, vbox
 from .explain import ExplainPanel
+from .panels.agent import AgentPanel
 from .panels.desk import DeskPanel
 from .panels.glossary import GlossaryPanel
 from .panels.lab import LabPanel
@@ -55,6 +56,8 @@ class AppContext(QObject):
         self.feed: Feed | None = None
         self.runner = PipelineRunner(self)
         self.scheduler = Scheduler(self.runner, parent=self)
+        from .agent_worker import AgentRunner
+        self.agent = AgentRunner(self)
         self.feed_restarts = 0
 
 
@@ -136,9 +139,10 @@ class AlertsPanel(Panel):
 
 
 PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
-          AlertsPanel, GlossaryPanel, DeskPanel]
+          AlertsPanel, GlossaryPanel, DeskPanel, AgentPanel]
 # Sidebar order: (code, label). Ctrl+1 … Ctrl+0 jump to these in order.
 NAV = [("MKT", "Market"), ("TODAY", "Today"), ("SCRN", "Screener"), ("WATCH", "Watchlist"), ("DESK", "My desk"),
+       ("ALGO", "Intraday agent"),
        ("DES", "Stock"),
        ("RANK", "Rankers"), ("LAB", "Backtest lab"), ("RISK", "Risk"), ("PLAN", "RL & plan"), ("ALRT", "Alerts"),
        ("GLOS", "Glossary")]
@@ -561,6 +565,8 @@ class MainWindow(QMainWindow):
             self.ctx.feed.stop()
         if self.ctx.runner.running:
             self.ctx.runner.stop()
+        if self.ctx.agent.running:                        # let the paper agent save and exit cleanly
+            self.ctx.agent.stop()
 
     def closeEvent(self, e):
         self.save_layout()

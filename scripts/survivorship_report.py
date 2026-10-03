@@ -82,6 +82,15 @@ have[cols] = p.close.reindex(M.index)[cols].notna().values
 coverage = float((M & have).values.sum() / M.values.sum())
 snaps = ", ".join(d.strftime("%Y-%m-%d") for d, _ in cs.snapshot_files())
 
+def md_table(df: pd.DataFrame) -> str:
+    """Plain Markdown table (no extra dependency)."""
+    cols = list(df.columns)
+    lines = ["| " + " | ".join(cols) + " |", "|" + "---|" * len(cols)]
+    lines += ["| " + " | ".join("" if pd.isna(v) else str(v) for v in row) + " |" for row in df.itertuples(index=False)]
+    return "
+".join(lines)
+
+
 fmt = {"IC mean": "{:.3f}", "IC t-stat": "{:.2f}", "Spread / mo": "{:+.2%}", "CAGR": "{:+.1%}", "Sharpe": "{:.2f}",
        "MaxDD": "{:.1%}", "Return/DD": "{:.2f}", "Random CAGR p5": "{:+.1%}", "Random CAGR p50": "{:+.1%}",
        "Random CAGR p95": "{:+.1%}", "Beats % of random (CAGR)": "{:.0%}", "Beats % of random (Return/DD)": "{:.0%}",
@@ -96,6 +105,6 @@ md = ["# Survivorship report\n",
       f"Point-in-time membership from {len(cs.snapshot_files())} archived NSE snapshots ({snaps}); a stock counts "
       f"from the snapshot it appears in (stale between snapshots, never anticipated). Price coverage of member-days: "
       f"**{coverage:.1%}**; the missing ones are mostly delisted or merged companies, which still flatters results.\n",
-      show.to_markdown(index=False)]
+      md_table(show)]
 (out / "survivorship.md").write_text("\n".join(md), encoding="utf-8")
 print(f"\ncoverage {coverage:.1%}; wrote {out / 'survivorship.csv'} and survivorship.md")

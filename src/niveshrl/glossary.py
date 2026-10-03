@@ -801,6 +801,58 @@ E("holdings", "Holdings (Kite import)", "Desk",
 E("journal", "Trade journal", "Desk", "Trades you actually took, with entry, stop, exit and quantity; scored in R "
   "after costs exactly like the backtests. It never feeds any model.",
   related=["r_multiple"], aliases=["Entry date", "Exit date", "Exit"])
+E("intraday_agent", "Intraday paper agent", "Desk",
+  "A virtual pool (default Rs 1,00,000) that trades liquid NSE stocks intraday on its own during market hours and learns "
+  "from every result. Paper only: no order is ever placed.",
+  how="Every 5 minutes: the most active ('in play') stocks from 934 liquid NSE names, six rule-based setups (opening-"
+      "range breakout, VWAP reclaim/rejection, 9/20 EMA pullback, previous-day high/low break, gap-and-go, NR7) on "
+      "finished 5-minute bars, an ML probability and a learned TAKE/HALF/SKIP, then fills at the next bar's open within "
+      "fixed guardrails (at most 1% of the pool at risk per trade, at most 5 positions, stop after a -3% day, "
+      "square-off 15:15).",
+  use="An honest experiment in whether intraday rules plus learning can beat costs. The first 52-day replay lost money "
+      "(-13.6% with the cost rule, gross also negative) while beating a random control; live paper trading is the test.",
+  caveat="The +10% per day target has not been reached on any day. Intraday trading after costs is a negative-sum game "
+         "for most participants; no verdict before 100 closed trades.",
+  related=["agent_bandit", "intraday_costs", "random_control", "speculative_tax"],
+  aliases=["Agent", "Pool", "Today P&L", "After tax", "Intraday agent", "Replay", "Gross", "Costs", "Trades",
+           "vs random control"])
+E("agent_trade", "Agent trade / decision", "Desk",
+  "One paper trade or decision: the stock, the setup that fired, long or short, the decision (TAKE full size, HALF "
+  "size, SKIP, or BLOCKED by a guardrail), entry (next bar's open plus slippage), stop, target (2R), quantity, exit and "
+  "its reason (target / stop / square-off), and why the agent decided as it did.",
+  related=["intraday_agent", "agent_bandit"])
+E("intraday_costs", "Intraday costs (gross to net)", "Desk",
+  "Gross = price P&L. Costs = brokerage (Rs 20 or 0.03% per order, whichever is lower), STT 0.025% on the sell side, "
+  "NSE transaction 0.00297%, SEBI Rs 10/crore, stamp duty 0.003% on buys, 18% GST on brokerage + exchange + SEBI, and "
+  "0.03% slippage per side. Net = gross - costs.",
+  use="With tight intraday stops, costs are often 0.2-0.3R per trade: more than the setups' edge. The agent skips "
+      "signals whose costs would exceed 0.2R.",
+  related=["speculative_tax", "intraday_agent"])
+E("speculative_tax", "Speculative (intraday) tax", "Desk",
+  "Intraday equity profit is speculative business income, taxed at your income-tax slab plus 4% cess. Speculative "
+  "losses can only be set off against speculative gains (carried forward up to 4 years).",
+  how="Computed on the financial year's net speculative profit so far (zero if the year is net negative); the slab is "
+      "editable on the agent screen.", related=["intraday_costs"], aliases=["tax_accrued"])
+E("agent_bandit", "Learning buckets (bandit)", "Desk",
+  "Similar signals are grouped (setup x long/short x time of day x with/against NIFTY's trend, then broader groups). "
+  "Each group's average net R decides: SKIP when clearly negative (t-stat below -2 with at least 20 outcomes), HALF "
+  "when uncertain, TAKE otherwise or while still learning. Skipped signals are still followed, so wrong skips are "
+  "learned.",
+  bands=[(-2, "SKIP", "clearly loses after costs"), (0, "HALF / uncertain", ""), (INF, "TAKE", "")],
+  use="Learns which setups and conditions lose money and stops taking them, within guardrails it can never change.",
+  related=["intraday_agent", "agent_ml"])
+E("agent_ml", "ML probability (intraday)", "Desk",
+  "LightGBM's estimate that a signal ends in profit after costs, from features known at the signal bar. Trained only on "
+  "earlier days; used once there are at least 300 outcomes. Below 40% the agent skips.",
+  unit="pct", bands=[(0.4, "skip", ""), (0.5, "weak", ""), (INF, "favourable", "")], related=["agent_bandit"])
+E("random_control", "Random control account", "Desk",
+  "A second paper account that sees the same signals but takes each on a coin flip, with the same guardrails and "
+  "costs. If the agent can't beat it, its learning isn't adding anything.",
+  related=["luck_test", "intraday_agent"], aliases=["Random control", "control_net"])
+E("agent_day", "Agent trading day", "Desk",
+  "One day of the paper account: pool at start and end, gross P&L, costs, net P&L, tax accrued, trades, signals seen "
+  "and skipped, the random control's net, and whether the day reached the +10% target.",
+  related=["intraday_agent"], aliases=["Days"])
 E("weight", "Portfolio weight", "Backtest & risk", "Share of the portfolio in each stock at the last rebalance.",
   unit="pct", aliases=["Weight"])
 E("rebalance", "Rebalance log", "Backtest & risk", "One row per rebalance: turnover traded, costs paid (₹), "
