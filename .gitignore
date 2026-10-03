@@ -34,3 +34,4 @@ data/journal.json
 data/*.bak
 data/intraday/
 data/nifty200_pit_panel.parquet
+data/bhav/
