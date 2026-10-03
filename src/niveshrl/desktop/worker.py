@@ -22,10 +22,32 @@ from ..livefeed import IST
 log = logging.getLogger("niveshrl.worker")
 
 
+def _child_logging() -> logging.Logger:
+    """The worker has no console (windowed exe): log to its own rotating file next to the app log."""
+    import logging.handlers
+    import os
+    d = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "NiveshRL", "logs")
+    os.makedirs(d, exist_ok=True)
+    h = logging.handlers.RotatingFileHandler(os.path.join(d, "pipeline.log"), maxBytes=2_000_000, backupCount=3,
+                                             encoding="utf-8")
+    h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(name)s: %(message)s"))
+    root = logging.getLogger()
+    root.setLevel(logging.INFO)
+    root.addHandler(h)
+    return logging.getLogger("niveshrl.pipeline")
+
+
 def _pipeline_main(q, steps, with_seq) -> None:          # runs in the child process
     try:
+        plog = _child_logging()
+        plog.info("worker started, steps=%s", steps or "all")
+
+        def progress(s, f):
+            plog.info("step %s %.0f%%", s, f * 100)
+            q.put(("progress", s, float(f)))
         from niveshrl.research import daily
-        meta = daily.run(steps=steps, with_seq=with_seq, progress=lambda s, f: q.put(("progress", s, float(f))))
+        meta = daily.run(steps=steps, with_seq=with_seq, progress=progress)
+        plog.info("done: %s", {k: (v.get("ok"), v.get("seconds"), v.get("error", "")[-300:]) for k, v in meta.get("steps", {}).items()})
         q.put(("done", meta))
     except BaseException:
         q.put(("error", traceback.format_exc()[-2000:]))
@@ -83,6 +105,8 @@ class PipelineRunner(QObject):
             while True:
                 msg = self.q.get_nowait()
                 if msg[0] == "progress":
+                    if msg[1] != self.state[0]:
+                        log.info("pipeline step: %s (%.0f%%)", msg[1], msg[2] * 100)
                     self.state = (msg[1], msg[2])
                     self.progress.emit(msg[1], msg[2])
                 elif msg[0] == "done":

@@ -133,6 +133,8 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
         n = ctx.get("news")
         if n is None:
             n = pd.read_parquet(out / "news.parquet")
+        scored = ["p_pos", "p_neu", "p_neg", "label", "score"]
+        n = n.drop(columns=[c for c in scored if c in n])     # re-runs re-score instead of duplicating columns
         sc = S.score_news(n)
         sc.to_parquet(out / "news.parquet")
         agg = S.aggregate(sc, pd.Timestamp.now(tz="Asia/Kolkata"))
@@ -142,6 +144,7 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
         mk = out / "market_news.parquet"
         if mk.exists():
             m = pd.read_parquet(mk)
+            m = m.drop(columns=[c for c in scored if c in m])
             if len(m):
                 pd.concat([m.reset_index(drop=True), S.score_texts(m["title"].tolist())], axis=1).to_parquet(mk)
         return f"{len(sc)} headlines scored, market mean {agg['sentiment'].mean():+.2f}"
