@@ -12,7 +12,7 @@ Streamlit web terminal **and** a native Windows desktop app (PySide6 + a C++ cor
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Qt](https://img.shields.io/badge/desktop-PySide6%20%2B%20C%2B%2B-41CD52?logo=qt&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-140%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-143%20passing-2ea44f)
 ![Market](https://img.shields.io/badge/market-NSE%20India-FF9F1C)
 
 </div>
@@ -95,6 +95,7 @@ A native PySide6 app with the same features and terminal look as the web view, b
 
 - **Workspace:** a left-hand menu that shows one screen at a time (Market, Today, Screener, Watchlist, Stock, Rankers, Backtest lab, Risk, RL & plan, Alerts; `Ctrl+1` … `Ctrl+0`), a Back button (`Alt+Left`), a command bar (`Ctrl+K`, type `RELIANCE` or a screen code such as `SCRN`) and a scrolling ticker strip. Window size and last screen are saved to `%APPDATA%\NiveshRL`.
 - **Charts:** pyqtgraph candlesticks with SMA50/200, volume and RSI panes. Range buttons (1M … 5Y, All); the mouse wheel zooms time only, dragging pans, the price axis always fits the visible window, double-click resets; a readout shows the date, OHLC, change, volume, SMA50 and RSI under the cursor. A squarified sector treemap heatmap.
+- **Built-in glossary (139 entries, [glossary.py](src/niveshrl/glossary.py)):** every metric, model output, model and chart explains itself. Click any label marked ⓘ (KPI tiles, section titles), a chart's *What am I looking at?* button, or right-click a table header or value. The Explain panel shows what it is, how the app computes it, what different ranges of values usually mean with **your value's range highlighted**, the stock's sector median for valuation and quality metrics, how it helps, caveats, related terms and, for every model, its **measured out-of-sample record** read live from `report/results/`. Searchable Glossary screen (F1). A test fails if any label on screen has no entry.
 - **Tray app:** closing the window keeps the live feed, watchlist alerts (Windows notifications, once per alert per day) and the **16:00 pipeline** running. Optional start-with-Windows.
 - **Process model:** the UI thread only paints. The live feed runs on its own thread into the C++ tick store; file loads, Yahoo fundamentals and backtests run on a thread pool; the daily pipeline (FinBERT, LightGBM, DL) runs in a **separate worker process**, so model memory is returned to the OS after each run.
 - **Long-run hardening:** a watchdog restarts a dead or stalled feed (no ticks for 5 min in market hours) and notices a crashed worker; caches are bounded (LRU backtests, pruned fundamentals, only today's daily outputs); rotating logs in `%APPDATA%\NiveshRL\logs`; CPU/RAM/UI-latency shown in the status bar.
@@ -171,7 +172,7 @@ NiveshRL/
 ├── scripts/                    # prepare_data, train_rankers, train_volatility, train_regimes, train_custom, evaluate, demo …
 ├── cpp/                        # C++ core (pybind11): indicators, screener, backtest loop, tick store
 ├── packaging/                  # PyInstaller spec, Inno Setup script, build.ps1
-├── tests/                      # 140 tests
+├── tests/                      # 143 tests
 └── report/                     # results tables and figures
 ```
 
@@ -191,7 +192,7 @@ python -m venv .venv && .venv/Scripts/activate      # Windows; use bin/activate 
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
 python scripts/prepare_data.py                     # download + data-quality report
-pytest                                             # 140 tests: costs, tax, env, no-lookahead, leakage, desk, C++ parity, desktop UI
+pytest                                             # 143 tests: costs, tax, env, no-lookahead, leakage, desk, C++ parity, desktop UI
 python scripts/sanity_toy.py                       # can PPO find the one drifting stock?
 python scripts/run_baselines.py --split val
 python scripts/train_custom.py --steps 500000 --seed 0
@@ -400,7 +401,16 @@ NIFTY 50 over the same period: 10.6%/yr.
 
 The regimes separate **future volatility** well: 12.6% after Bull weeks vs 20.6% after Stress weeks. They do *not* predict direction. Stress weeks (2011, COVID 2020, 2026) were on average followed by rebounds. That is why the regime filter lowers drawdowns without raising Sharpe.
 
-**Volatility forecaster: not finished yet.** The walk-forward LSTM had reached test year 2021 of 2026 when the run was stopped, so there are no LSTM-vs-GARCH results yet. The GARCH, EWMA and historical baselines are implemented and computed. Run `python scripts/train_volatility.py` (a few hours on CPU; faster with nothing else running) to produce `report/results/vol_summary.csv` and the RISK screen's scoreboard.
+**Volatility forecaster.** Month-end forecasts of each stock's next-21-day realised volatility, walk-forward 2012 → Aug 2026, 28,461 forecasts where every model has one ([vol_summary.csv](report/results/vol_summary.csv)):
+
+| Model | RMSE log-vol | MAE vol | QLIKE | Corr | Bias (forecast ÷ realised) |
+|---|---|---|---|---|---|
+| **LSTM** | **0.337** | **8.3%** | **0.277** | 0.553 | 1.04 |
+| EWMA (λ = 0.94) | 0.368 | 9.5% | 0.303 | **0.558** | 1.07 |
+| GARCH(1,1) | 0.400 | 10.1% | 0.346 | 0.469 | 1.18 |
+| Historical 21-day | 0.401 | 10.1% | 10.91 | 0.509 | 1.01 |
+
+The LSTM is the most accurate on every error measure and nearly unbiased. EWMA is a close, much cheaper second and ranks stocks by volatility about as well. GARCH over-forecasts by ~18%. Use the forecast to size positions: a stock forecast at 40% volatility deserves about half the position of one at 20%.
 
 ## Limitations
 

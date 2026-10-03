@@ -26,6 +26,8 @@ from .. import watchlist as wl
 from ..livefeed import IST, Feed, market_open
 from . import data, theme
 from .panels import Panel, vbox
+from .explain import ExplainPanel
+from .panels.glossary import GlossaryPanel
 from .panels.lab import LabPanel
 from .panels.market import MarketBase, MarketPanel, ticker_strip_text
 from .panels.research import PlanPanel, RankersPanel, RiskPanel
@@ -33,6 +35,7 @@ from .panels.screener import ScreenerPanel
 from .panels.stock import StockPanel
 from .panels.today import TodayPanel
 from .panels.watchlist import WatchlistPanel, watch_rows
+from . import widgets
 from .widgets import run_async
 from .worker import PipelineRunner, Scheduler
 
@@ -132,10 +135,11 @@ class AlertsPanel(Panel):
 
 
 PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
-          AlertsPanel]
+          AlertsPanel, GlossaryPanel]
 # Sidebar order: (code, label). Ctrl+1 … Ctrl+0 jump to these in order.
 NAV = [("MKT", "Market"), ("TODAY", "Today"), ("SCRN", "Screener"), ("WATCH", "Watchlist"), ("DES", "Stock"),
-       ("RANK", "Rankers"), ("LAB", "Backtest lab"), ("RISK", "Risk"), ("PLAN", "RL & plan"), ("ALRT", "Alerts")]
+       ("RANK", "Rankers"), ("LAB", "Backtest lab"), ("RISK", "Risk"), ("PLAN", "RL & plan"), ("ALRT", "Alerts"),
+       ("GLOS", "Glossary")]
 
 
 class MainWindow(QMainWindow):
@@ -198,8 +202,9 @@ class MainWindow(QMainWindow):
         tb.addWidget(self.prog)
         self.addToolBar(Qt.TopToolBarArea, tb)
         keys = [("Ctrl+K", lambda: (self.cmd.setFocus(), self.cmd.selectAll())), ("F5", self.run_pipeline),
-                ("Alt+Left", self.go_back)]
-        keys += [(f"Ctrl+{(i + 1) % 10}", lambda c=c: self.show_panel(c)) for i, (c, _) in enumerate(NAV)]
+                ("Alt+Left", self.go_back), ("F1", lambda: self.show_panel("GLOS")),
+                ("Escape", lambda: self.explain_panel.hide_panel())]
+        keys += [(f"Ctrl+{(i + 1) % 10}", lambda c=c: self.show_panel(c)) for i, (c, _) in enumerate(NAV[:10])]
         for key, fn in keys:
             a = QAction(self)
             a.setShortcut(QKeySequence(key))
@@ -236,7 +241,7 @@ class MainWindow(QMainWindow):
         for i, (code, label) in enumerate(NAV):
             it = QListWidgetItem(f"{label}")
             it.setData(Qt.UserRole, code)
-            it.setToolTip(f"{label}  ·  {code}  ·  Ctrl+{(i + 1) % 10}")
+            it.setToolTip(f"{label}  ·  {code}" + (f"  ·  Ctrl+{(i + 1) % 10}" if i < 10 else "  ·  F1"))
             self.nav.addItem(it)
             self.page_index[code] = self.pages.addWidget(self.panels[code])
             act = QAction(f"{label}\t{code}", self)
@@ -250,7 +255,10 @@ class MainWindow(QMainWindow):
         lay.setSpacing(0)
         lay.addWidget(self.nav)
         lay.addWidget(self.pages, 1)
+        self.explain_panel = ExplainPanel()
+        lay.addWidget(self.explain_panel)
         self.setCentralWidget(central)
+        widgets.EXPLAIN = self.explain
         geo = self.settings.value("geometry")
         if isinstance(geo, QByteArray):
             self.restoreGeometry(geo)
@@ -346,6 +354,15 @@ class MainWindow(QMainWindow):
         if self.base is not None:
             self.panels[code].ensure_loaded()
             self.panels[code].on_tick()
+
+    def explain(self, label, value=None, ticker=None) -> bool:
+        """Open the Explain panel for a label or glossary key; False if the glossary has nothing on it."""
+        e = widgets.term_for(label)
+        if e is None:
+            self.statusBar().showMessage(f"No glossary entry for '{label}'.", 3000)
+            return False
+        self.explain_panel.show_entry(e, value, ticker)
+        return True
 
     def go_back(self) -> None:
         if not self.history:
@@ -521,7 +538,9 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "NiveshRL", (
             "NiveshRL trading desk\n\n"
             "Commands (Ctrl+K): type a symbol (RELIANCE) or a screen code: MKT, TODAY, SCRN, WATCH, LAB, RANK, RISK, "
-            "PLAN, ALRT, DES.\nPick a screen in the left menu (or Ctrl+1 … Ctrl+0); Alt+Left goes back.\n"
+            "PLAN, ALRT, DES, GLOS.\nPick a screen in the left menu (or Ctrl+1 … Ctrl+0; F1 = Glossary); Alt+Left goes back.\n"
+            "Explanations: click any label marked ⓘ, a KPI tile or a chart's 'What am I looking at?' button; right-click "
+            "a table header or value. Esc closes the Explain panel.\n"
             "Charts: mouse wheel zooms time, drag pans, the range buttons (1M … All) jump, double-click resets.\n"
             "F5 runs the daily pipeline (prices, fundamentals, news + FinBERT, next-day model, briefing).\n\n"
             "Educational project, not investment advice. Not registered with SEBI."))

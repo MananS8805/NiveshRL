@@ -181,6 +181,7 @@ class LabPanel(Panel):
         if reb is not None and len(reb):
             rv = reb.copy()
             tr = FrameTable(fmt={"turnover": "{:.1%}", "cost": "₹{:,.0f}", "value": "₹{:,.0f}", "invested": "{:.0%}"})
+            tr.model_.term_overrides = {"value": "rebalance", "cost": "rebalance", "holdings": "rebalance"}
             rv.index = [d.strftime("%Y-%m-%d") for d in rv.index]
             tr.set_frame(rv)
             self.tabs.addTab(tr, "Trading")

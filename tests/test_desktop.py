@@ -193,3 +193,52 @@ def test_price_chart_y_axis_fits_visible_window(qtbot):
     c.set_range("6M")
     y0, y1 = c.plots[0].vb.viewRange()[1]
     assert y1 < 2500, "y-axis should fit the visible last 6 months (~2000), not the whole history (4000)"
+
+
+def test_every_label_on_screen_has_a_glossary_entry(qtbot, window):
+    """Coverage: no KPI tile, table column or chart may ship without an explanation."""
+    from niveshrl import glossary as gl
+    from niveshrl.desktop.widgets import ChartFrame, FrameTable, KpiRow
+    _wait_ready(qtbot, window)
+    window.open_stock("TCS.NS")
+    for code in window.page_index:
+        window.show_panel(code)
+        qtbot.wait(300)
+    labels = set()
+    for kr in window.findChildren(KpiRow):
+        labels |= {str(it[0]) for it in getattr(kr, "items", [])}
+    for t in window.findChildren(FrameTable):
+        if t.explainable:
+            labels |= {t.model_.term_overrides.get(c, c) for c in t.model_.cols}
+    for cf in window.findChildren(ChartFrame):
+        labels.add(cf.explain_key or cf.title.text())
+    missing = sorted(lb for lb in labels if lb not in gl.G and gl.lookup(lb) is None and gl._norm(lb) not in gl.IGNORE)
+    assert not missing, f"labels without a glossary entry: {missing}"
+
+
+def test_glossary_bands_and_parsing():
+    from niveshrl import glossary as gl
+    rsi = gl.lookup("RSI 14")
+    assert gl.band(rsi, 25)[1][1] == "oversold" and gl.band(rsi, 75)[1][1] == "overbought"
+    assert gl.parse_value("+0.88%") == pytest.approx(0.0088)
+    assert gl.parse_value("₹15.80 L Cr") == pytest.approx(1.58e6)
+    assert gl.band(gl.G["market_cap"], gl.parse_value("₹15.80 L Cr"))[1][1] == "large cap"
+    for e in gl.G.values():                              # bands ascending, related terms exist
+        ups = [b[0] for b in e.bands]
+        assert ups == sorted(ups), e.key
+        assert all(r in gl.G for r in e.related), e.key
+        assert e.category in gl.CATEGORIES, e.key
+
+
+def test_kpi_tile_click_opens_explain_panel(qtbot, window):
+    from PySide6.QtCore import Qt
+    _wait_ready(qtbot, window)
+    window.show_panel("MKT")
+    window.panels["MKT"].ensure_loaded()
+    kr = window.panels["MKT"].kpis
+    i = [str(it[0]) for it in kr.items].index("India VIX")
+    cell = kr.cells[i][0].parentWidget()
+    qtbot.mouseClick(cell, Qt.LeftButton)
+    assert window.explain_panel.isVisible()
+    assert "India VIX" in window.explain_panel.view.toPlainText()
+    window.explain_panel.hide_panel()

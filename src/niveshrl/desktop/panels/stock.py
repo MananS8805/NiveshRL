@@ -94,6 +94,7 @@ class StockPanel(Panel):
         sl.addStretch(1)
         self.tabs.addTab(sw, "Key stats")
         self.news = FrameTable(fmt={"Score": "{:+.2f}"}, signed={"Score"})
+        self.news.model_.term_overrides = {"Score": "finbert"}
         self.news.doubleClicked.connect(self._open_news)
         nw = QWidget()
         nl = QVBoxLayout(nw)
@@ -108,6 +109,7 @@ class StockPanel(Panel):
         self.stmts = {}
         for key, label in [("annual", "Income statement"), ("balance", "Balance sheet"), ("cashflow", "Cash flow")]:
             t = FrameTable(fmt={})
+            t.explainable = False                      # raw statement line items
             self.stmts[key] = t
             self.tabs.addTab(t, label)
         self.owner = QTextBrowser()
@@ -124,6 +126,9 @@ class StockPanel(Panel):
     # ------------------------------------------------------------------ public
     def show_stock(self, ticker: str) -> None:
         self.ticker = ticker
+        for k in (self.desk, self.stats, self.news_head):    # tiles describe this stock (sector context)
+            k.ticker = ticker
+        self.tech.ticker_hint = ticker
         self.fund = None
         p = data.panel()
         self.name.setText(f"{ticker.replace('.NS', '')} · {p.names.get(ticker, '')}")

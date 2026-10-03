@@ -92,6 +92,7 @@ class TodayPanel(Panel):
         hl.addWidget(h2("Market habits (NIFTY, measured from history, not opinions)"))
         hab = QHBoxLayout()
         self.dow = FrameTable(fmt={"mean": "{:+.3%}", "hit": "{:.0%}", "n": "{:.0f}"}, signed={"mean"})
+        self.dow.model_.term_overrides = {"mean": "market_habits", "hit": "market_habits", "n": "market_habits"}
         self.habits = QTextBrowser()
         self.intraday = QTextBrowser()
         for w in (self.dow, self.habits, self.intraday):

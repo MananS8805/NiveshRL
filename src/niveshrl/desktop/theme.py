@@ -55,6 +55,7 @@ QListWidget#nav {{ background: {PANEL}; border: none; border-right: 1px solid {G
 QListWidget#nav::item {{ color: {MUTED}; padding: 11px 16px; border-left: 3px solid transparent; font-size: 13px; }}
 QListWidget#nav::item:hover {{ color: {TEXT}; background: #161C25; }}
 QListWidget#nav::item:selected {{ color: {AMBER}; background: #1A1610; border-left: 3px solid {AMBER}; }}
+QFrame#explain {{ background: {PANEL}; border-left: 1px solid {AMBER}; }}
 QToolTip {{ background: {PANEL}; color: {TEXT}; border: 1px solid {AMBER}; }}
 """
 

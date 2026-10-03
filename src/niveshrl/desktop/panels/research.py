@@ -6,6 +6,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
+from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QComboBox, QFormLayout, QHBoxLayout, QLineEdit, QPushButton, QSpinBox, QTabWidget,
                                QTextBrowser, QVBoxLayout, QWidget)
 
@@ -13,7 +14,7 @@ from ...config import ROOT
 from ...research.regime import FEATS, REGIME_COLORS, REGIMES
 from ...research.signals import MODEL_LABELS
 from .. import data, theme
-from ..widgets import FrameTable, KpiRow, h2, line_chart, muted, run_async
+from ..widgets import ExplainButton, FrameTable, KpiRow, h2, line_chart, muted, run_async
 from . import Panel, vbox
 
 RANK_MODELS = ["ffnn", "lstm", "transformer", "logreg", "momentum"]
@@ -202,8 +203,11 @@ class RankersPanel(Panel):
         for w in (ic_plot, dec_plot):                    # headroom so the one-row legend clears the data
             (y0, y1) = w.getViewBox().childrenBounds()[1] or (0, 1)
             w.setYRange(y0, y1 + (y1 - y0) * 0.22, padding=0.02)
-        row.addWidget(ic_plot)
-        row.addWidget(dec_plot)
+        for plot, key in ((ic_plot, "chart_ic_year"), (dec_plot, "chart_decile")):
+            col = QVBoxLayout()
+            col.addWidget(ExplainButton(key), 0, Qt.AlignLeft)
+            col.addWidget(plot, 1)
+            row.addLayout(col)
         top = QWidget()
         top.setLayout(row)
         top.setMinimumHeight(260)
@@ -272,6 +276,7 @@ class RiskPanel(Panel):
             pw.showGrid(x=True, y=True, alpha=0.15)
             pw.setMouseEnabled(x=False, y=False)
             pw.setMenuEnabled(False)
+            self.vol_year.addWidget(ExplainButton("chart_vol_year"), 0, Qt.AlignLeft)
             self.vol_year.addWidget(pw)
         else:
             self.vol.set_frame(pd.DataFrame({"": ["No volatility forecasts. Run python scripts/train_volatility.py."]}))

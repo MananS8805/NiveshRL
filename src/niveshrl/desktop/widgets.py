@@ -61,6 +61,57 @@ def run_async(fn, on_done, *args, on_error=None, **kw) -> Task:
     return t
 
 
+# --------------------------------------------------------------------------- glossary hook
+EXPLAIN = None          # set by the main window: EXPLAIN(label_or_key, value=None, ticker=None) -> bool
+
+
+def explain(label, value=None, ticker=None) -> bool:
+    """Open the Explain panel for a label/term key. Returns False if nothing is known about it."""
+    return bool(EXPLAIN and EXPLAIN(label, value, ticker))
+
+
+def term_for(label):
+    from .. import glossary as gl
+    return gl.G.get(label) if label in gl.G else gl.lookup(label)
+
+
+def short_help(label) -> str:
+    e = term_for(label)
+    if e is None:
+        return ""
+    first = e.what.split(". ")[0].rstrip(".") + "."
+    return f"{e.title}: {first}"
+
+
+class ExplainButton(QPushButton):
+    """Small 'ⓘ What am I looking at?' button for charts and sections."""
+
+    def __init__(self, key: str, text: str = "ⓘ What am I looking at?", parent=None):
+        super().__init__(text, parent)
+        self.key = key
+        self.setCursor(Qt.PointingHandCursor)
+        self.setStyleSheet(f"QPushButton{{padding:2px 8px;color:{theme.BLUE};border-color:{theme.GRID};}}")
+        self.setToolTip(short_help(key))
+        self.clicked.connect(lambda: explain(self.key))
+
+
+class ClickLabel(QLabel):
+    """A label that opens the glossary entry for ``key`` when clicked."""
+
+    def __init__(self, text: str, key, parent=None):
+        super().__init__(text, parent)
+        self.key = key
+        self.value = None
+        self.ticker = None
+        self.setCursor(Qt.PointingHandCursor)
+        self.setToolTip(short_help(key) + "  (click for the full explanation)")
+
+    def mousePressEvent(self, e):
+        if e.button() == Qt.LeftButton and explain(self.key, self.value, self.ticker):
+            return
+        super().mousePressEvent(e)
+
+
 # --------------------------------------------------------------------------- DataFrame table
 class FrameModel(QAbstractTableModel):
     """Read-only DataFrame model. ``fmt``: column -> python format string; ``signed``: columns coloured +/-.
@@ -73,6 +124,7 @@ class FrameModel(QAbstractTableModel):
         super().__init__()
         self.fmt = fmt or {}
         self.signed = signed or set()
+        self.term_overrides: dict = {}            # header -> glossary key, where a label is ambiguous
         self._load(df if df is not None else pd.DataFrame())
 
     def _load(self, df: pd.DataFrame) -> None:
@@ -125,6 +177,9 @@ class FrameModel(QAbstractTableModel):
         return None
 
     def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role == Qt.ToolTipRole and orientation == Qt.Horizontal and section < len(self.cols):
+            h = short_help(self.term_overrides.get(self.cols[section], self.cols[section]))
+            return f"{h}\nRight-click for the full explanation." if h else None
         if role != Qt.DisplayRole:
             return None
         if orientation == Qt.Horizontal:
@@ -170,6 +225,48 @@ class FrameTable(QTableView):
         self.horizontalHeader().setStretchLastSection(True)
         self.verticalHeader().setDefaultSectionSize(22)
         self.clicked.connect(self._clicked)
+        self.explainable = True                  # False for tables of raw statement line items
+        self.ticker_hint = None                  # rows are attributes of this ticker (e.g. the technicals tab)
+        hh = self.horizontalHeader()
+        hh.setContextMenuPolicy(Qt.CustomContextMenu)
+        hh.customContextMenuRequested.connect(self._header_menu)
+        self.setContextMenuPolicy(Qt.CustomContextMenu)
+        self.customContextMenuRequested.connect(self._cell_menu)
+
+    def term(self, col: str):
+        return self.model_.term_overrides.get(col, col)
+
+    def _header_menu(self, pos) -> None:
+        sec = self.horizontalHeader().logicalIndexAt(pos)
+        if self.explainable and 0 <= sec < len(self.model_.cols):
+            explain(self.term(self.model_.cols[sec]))
+
+    def _cell_menu(self, pos) -> None:
+        idx = self.indexAt(pos)
+        if not idx.isValid() or not self.explainable:
+            return
+        src = self.proxy.mapToSource(idx)
+        m = self.model_
+        col = m.cols[src.column()]
+        label = m.labels[src.row()]
+        raw = m.vals[src.row()][src.column()]
+        shown = idx.data()
+        ticker = label if isinstance(label, str) and label.endswith(".NS") else self.ticker_hint
+        term, value = self.term(col), raw
+        if "Indicator" in m.cols and "Value" in m.cols:          # attribute tables: the row names the metric
+            row = m.vals[src.row()]
+            term = row[m.cols.index("Indicator")]
+            value = row[m.cols.index("Value")]
+            shown = value
+        from PySide6.QtWidgets import QMenu
+        menu = QMenu(self)
+        if term_for(term) is not None:
+            txt = f"Explain {term}" + (f" = {shown}" if shown not in (None, "", "–") else "")
+            menu.addAction(txt, lambda: explain(term, value if not isinstance(value, str) else shown, ticker))
+        if isinstance(label, str) and label.endswith(".NS"):
+            menu.addAction(f"Open {label.replace('.NS', '')}", lambda: self.row_clicked.emit(label))
+        if not menu.isEmpty():
+            menu.exec(self.viewport().mapToGlobal(pos))
 
     def set_frame(self, df: pd.DataFrame, live: bool = False) -> None:
         if live:
@@ -191,6 +288,16 @@ class FrameTable(QTableView):
 
 
 # --------------------------------------------------------------------------- KPI tiles
+class _KpiCell(QFrame):
+    def __init__(self, on_click):
+        super().__init__()
+        self.on_click = on_click
+
+    def mousePressEvent(self, ev):
+        self.on_click(ev)
+        super().mousePressEvent(ev)
+
+
 class KpiRow(QWidget):
     """A grid of small labelled values; ``set_items([(label, text, color, sub), ...])``."""
 
@@ -204,7 +311,7 @@ class KpiRow(QWidget):
 
     def set_items(self, items: list[tuple]) -> None:
         while len(self.cells) < len(items):
-            f = QFrame()
+            f = _KpiCell(lambda ev, i=len(self.cells): self._clicked(i, ev))
             f.setObjectName("kpi")
             v = QVBoxLayout(f)
             v.setContentsMargins(8, 5, 8, 5)
@@ -218,15 +325,29 @@ class KpiRow(QWidget):
             i = len(self.cells)
             self.grid.addWidget(f, i // self.cols, i % self.cols)
             self.cells.append((lab, val, sub))
-        for (lab, val, sub), it in zip(self.cells, items):
+        self.items = list(items)
+        for n, ((lab, val, sub), it) in enumerate(zip(self.cells, items)):
             label, text, color, subtext = (list(it) + [None, ""])[:4]
-            for w, t in ((lab, str(label).upper()), (val, text), (sub, subtext or "")):
+            known = term_for(str(label)) is not None
+            if lab.property("term") != (label, known):
+                lab.setProperty("term", (label, known))
+                frame = lab.parentWidget()
+                frame.setCursor(Qt.PointingHandCursor if known else Qt.ArrowCursor)
+                frame.setToolTip(short_help(str(label)) + "  (click for the full explanation)" if known else "")
+            for w, t in ((lab, str(label).upper() + (" ⓘ" if known else "")), (val, text), (sub, subtext or "")):
                 if w.text() != t:                        # setText/setStyleSheet trigger relayout: skip no-ops
                     w.setText(t)
             css = f"font-size:15px;color:{color or theme.TEXT};"
             if val.property("css") != css:
                 val.setProperty("css", css)
                 val.setStyleSheet(css)
+
+    ticker = None                                    # set by panels whose tiles describe one stock
+
+    def _clicked(self, i: int, ev) -> None:
+        if ev.button() == Qt.LeftButton and i < len(getattr(self, "items", [])):
+            label, text = self.items[i][0], self.items[i][1]
+            explain(str(label), text, self.ticker)
 
 
 # --------------------------------------------------------------------------- treemap heatmap
@@ -447,6 +568,12 @@ class ChartFrame(QWidget):
         self.title = QLabel("")
         self.title.setStyleSheet(f"color:{theme.AMBER};font-weight:600;")
         bar.addWidget(self.title)
+        self.explain_key = None
+        self.info = QPushButton("ⓘ What am I looking at?")
+        self.info.setCursor(Qt.PointingHandCursor)
+        self.info.setStyleSheet(f"QPushButton{{padding:2px 8px;color:{theme.BLUE};}}")
+        self.info.clicked.connect(lambda: explain(self.explain_key or self.title.text()))
+        bar.addWidget(self.info)
         bar.addStretch(1)
         self.buttons: dict[str, QPushButton] = {}
         for name, _ in RANGES:
@@ -524,6 +651,10 @@ class ChartFrame(QWidget):
 
 class PriceChart(ChartFrame):
     """Candles + SMA50/200 + volume + RSI(14), one shared time axis."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.explain_key = "candle"
 
     def plot(self, df: pd.DataFrame, title: str = "") -> None:
         """df: Open/High/Low/Close/Volume indexed by date."""
@@ -651,8 +782,10 @@ def h1(text: str) -> QLabel:
     return lab
 
 
-def h2(text: str) -> QLabel:
-    lab = QLabel(text)
+def h2(text: str, key: str | None = None) -> QLabel:
+    """Section title; clickable (ⓘ) when the glossary explains it."""
+    k = key or (text if term_for(text) is not None else None)
+    lab = ClickLabel(text + "  ⓘ", k) if k else QLabel(text)
     lab.setObjectName("h2")
     return lab
 
