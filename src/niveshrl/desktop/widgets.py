@@ -1,0 +1,507 @@
+"""Reusable desktop widgets: DataFrame table, KPI tiles, treemap heatmap, charts, background tasks."""
+from __future__ import annotations
+
+import math
+import traceback
+
+import numpy as np
+import pandas as pd
+import pyqtgraph as pg
+from PySide6.QtCore import (QAbstractTableModel, QModelIndex, QObject, QRectF, QRunnable, QSortFilterProxyModel, Qt,
+                            QThreadPool, Signal)
+from PySide6.QtGui import QBrush, QColor, QFont, QPen
+from PySide6.QtWidgets import (QFrame, QGraphicsRectItem, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView,
+                               QGridLayout, QHeaderView, QLabel, QTableView, QVBoxLayout, QWidget)
+
+from . import theme
+
+pg.setConfigOptions(antialias=True, background=theme.BG, foreground=theme.MUTED)
+
+
+# --------------------------------------------------------------------------- background work
+class _Signals(QObject):
+    done = Signal(object)
+    failed = Signal(str)
+
+
+class Task(QRunnable):
+    """Run ``fn`` on the Qt thread pool; results come back on the UI thread via signals."""
+
+    def __init__(self, fn, *args, **kw):
+        super().__init__()
+        self.fn, self.args, self.kw = fn, args, kw
+        self.signals = _Signals()
+
+    def run(self) -> None:
+        try:
+            try:
+                out = self.fn(*self.args, **self.kw)
+            except Exception:
+                self.signals.failed.emit(traceback.format_exc()[-1200:])
+            else:
+                self.signals.done.emit(out)
+        except RuntimeError:              # receiver/app already gone (e.g. during shutdown)
+            pass
+        finally:
+            _live.discard(self)
+
+
+_live: set = set()                        # keep tasks (and their signal objects) alive until they finish
+
+
+def run_async(fn, on_done, *args, on_error=None, **kw) -> Task:
+    t = Task(fn, *args, **kw)
+    t.setAutoDelete(False)
+    t.signals.done.connect(on_done)
+    if on_error:
+        t.signals.failed.connect(on_error)
+    _live.add(t)
+    QThreadPool.globalInstance().start(t)
+    return t
+
+
+# --------------------------------------------------------------------------- DataFrame table
+class FrameModel(QAbstractTableModel):
+    """Read-only DataFrame model. ``fmt``: column -> python format string; ``signed``: columns coloured +/-.
+
+    Values are copied once into plain Python lists: Qt asks for cells thousands of
+    times per repaint/sort, and pandas scalar access (``iat``) is far too slow for that.
+    """
+
+    def __init__(self, df: pd.DataFrame | None = None, fmt: dict | None = None, signed: set | None = None):
+        super().__init__()
+        self.fmt = fmt or {}
+        self.signed = signed or set()
+        self._load(df if df is not None else pd.DataFrame())
+
+    def _load(self, df: pd.DataFrame) -> None:
+        self.df = df
+        self.cols = [str(c) for c in df.columns]
+        self.labels = list(df.index)
+        self.vals = df.astype(object).to_numpy().tolist() if df.shape[1] else [[] for _ in range(len(df))]
+
+    def set_frame(self, df: pd.DataFrame) -> None:
+        self.beginResetModel()
+        self._load(df)
+        self.endResetModel()
+
+    def update_cells(self, df: pd.DataFrame) -> None:
+        """Same rows/columns as before (live refresh): repaint without resetting selection or scroll."""
+        if df.shape != self.df.shape or [str(c) for c in df.columns] != self.cols:
+            self.set_frame(df)
+            return
+        relabel = list(df.index) != self.labels
+        self._load(df)
+        self.dataChanged.emit(self.index(0, 0), self.index(len(df) - 1, df.shape[1] - 1))
+        if relabel:                                   # e.g. a different top-12: no model reset needed
+            self.headerDataChanged.emit(Qt.Vertical, 0, len(df) - 1)
+
+    def rowCount(self, parent=QModelIndex()):
+        return len(self.vals)
+
+    def columnCount(self, parent=QModelIndex()):
+        return len(self.cols)
+
+    def data(self, idx, role=Qt.DisplayRole):
+        if not idx.isValid():
+            return None
+        v = self.vals[idx.row()][idx.column()]
+        if role == Qt.UserRole:                           # raw value, for sorting
+            return v
+        num = isinstance(v, (int, float, np.number)) and not isinstance(v, bool)
+        if role == Qt.DisplayRole:
+            if v is None or (num and v != v) or v is pd.NaT:
+                return "–"
+            f = self.fmt.get(self.cols[idx.column()])
+            try:
+                return f.format(v) if f else (f"{v:,.2f}" if isinstance(v, (float, np.floating)) else str(v))
+            except (ValueError, TypeError):
+                return str(v)
+        if role == Qt.ForegroundRole and num and v == v and self.cols[idx.column()] in self.signed:
+            return _BRUSH[v >= 0]
+        if role == Qt.TextAlignmentRole and num:
+            return int(Qt.AlignRight | Qt.AlignVCenter)
+        return None
+
+    def headerData(self, section, orientation, role=Qt.DisplayRole):
+        if role != Qt.DisplayRole:
+            return None
+        if orientation == Qt.Horizontal:
+            return self.cols[section]
+        return str(self.labels[section]).removesuffix(".NS")
+
+
+_BRUSH = {True: QBrush(QColor(theme.GREEN)), False: QBrush(QColor(theme.RED))}
+
+
+class _SortProxy(QSortFilterProxyModel):
+    def lessThan(self, a, b):
+        x, y = a.data(Qt.UserRole), b.data(Qt.UserRole)
+        try:
+            xn = x is None or (isinstance(x, float) and math.isnan(x))
+            yn = y is None or (isinstance(y, float) and math.isnan(y))
+            if xn or yn:
+                return bool(yn and not xn)
+            return bool(x < y)
+        except TypeError:
+            return str(x) < str(y)
+
+
+class FrameTable(QTableView):
+    """Sortable DataFrame table; ``row_clicked`` emits the row's index label (e.g. a ticker)."""
+    row_clicked = Signal(object)
+
+    def __init__(self, fmt=None, signed=None, parent=None):
+        super().__init__(parent)
+        self.model_ = FrameModel(fmt=fmt, signed=signed)
+        self.proxy = _SortProxy()
+        self.proxy.setSourceModel(self.model_)
+        self.setModel(self.proxy)
+        self.setSortingEnabled(True)
+        self.setAlternatingRowColors(True)
+        self.setSelectionBehavior(QTableView.SelectRows)
+        self.setSelectionMode(QTableView.SingleSelection)
+        self.horizontalHeader().setSectionResizeMode(QHeaderView.Interactive)
+        self.horizontalHeader().setStretchLastSection(True)
+        self.verticalHeader().setDefaultSectionSize(22)
+        self.clicked.connect(self._clicked)
+
+    def set_frame(self, df: pd.DataFrame, live: bool = False) -> None:
+        if live:
+            self.model_.update_cells(df)
+        else:
+            self.model_.set_frame(df)
+            self.resizeColumnsToContents()
+
+    def _clicked(self, idx):
+        src = self.proxy.mapToSource(idx)
+        if src.isValid():
+            self.row_clicked.emit(self.model_.labels[src.row()])
+
+
+# --------------------------------------------------------------------------- KPI tiles
+class KpiRow(QWidget):
+    """A grid of small labelled values; ``set_items([(label, text, color, sub), ...])``."""
+
+    def __init__(self, cols: int = 6, parent=None):
+        super().__init__(parent)
+        self.grid = QGridLayout(self)
+        self.grid.setContentsMargins(0, 0, 0, 0)
+        self.grid.setSpacing(6)
+        self.cols = cols
+        self.cells: list[tuple[QLabel, QLabel, QLabel]] = []
+
+    def set_items(self, items: list[tuple]) -> None:
+        while len(self.cells) < len(items):
+            f = QFrame()
+            f.setObjectName("kpi")
+            v = QVBoxLayout(f)
+            v.setContentsMargins(8, 5, 8, 5)
+            v.setSpacing(1)
+            lab, val, sub = QLabel(), QLabel(), QLabel()
+            lab.setStyleSheet(f"color:{theme.MUTED};font-size:10px;")
+            val.setStyleSheet("font-size:15px;")
+            sub.setStyleSheet(f"color:{theme.MUTED};font-size:10px;")
+            for w in (lab, val, sub):
+                v.addWidget(w)
+            i = len(self.cells)
+            self.grid.addWidget(f, i // self.cols, i % self.cols)
+            self.cells.append((lab, val, sub))
+        for (lab, val, sub), it in zip(self.cells, items):
+            label, text, color, subtext = (list(it) + [None, ""])[:4]
+            for w, t in ((lab, str(label).upper()), (val, text), (sub, subtext or "")):
+                if w.text() != t:                        # setText/setStyleSheet trigger relayout: skip no-ops
+                    w.setText(t)
+            css = f"font-size:15px;color:{color or theme.TEXT};"
+            if val.property("css") != css:
+                val.setProperty("css", css)
+                val.setStyleSheet(css)
+
+
+# --------------------------------------------------------------------------- treemap heatmap
+def _squarify(values: list[float], x: float, y: float, w: float, h: float) -> list[tuple]:
+    """Squarified treemap layout (Bruls et al.). Returns rects aligned with ``values`` (sorted desc by caller)."""
+    rects: list[tuple] = []
+    vals = list(values)
+    total = sum(vals)
+    if total <= 0:
+        return [(x, y, 0, 0)] * len(vals)
+    scale = w * h / total
+    vals = [v * scale for v in vals]
+
+    def worst(row, side):
+        s = sum(row)
+        return max(max(side * side * r / (s * s), (s * s) / (side * side * r)) for r in row)
+
+    i = 0
+    while i < len(vals):
+        side = min(w, h)
+        row = [vals[i]]
+        j = i + 1
+        while j < len(vals) and worst(row + [vals[j]], side) <= worst(row, side):
+            row.append(vals[j])
+            j += 1
+        s = sum(row)
+        if w >= h:                                     # lay the row out vertically on the left
+            cw = s / h
+            cy = y
+            for r in row:
+                rects.append((x, cy, cw, r / cw))
+                cy += r / cw
+            x, w = x + cw, w - cw
+        else:
+            ch = s / w
+            cx = x
+            for r in row:
+                rects.append((cx, y, r / ch, ch))
+                cx += r / ch
+            y, h = y + ch, h - ch
+        i = j
+    return rects
+
+
+def heat_color(r: float, lim: float) -> QColor:
+    if r != r:
+        return QColor("#1A1F27")
+    t = max(-1.0, min(1.0, r / lim))
+    base = np.array([26, 31, 39])
+    tgt = np.array([11, 122, 62]) if t > 0 else np.array([139, 0, 0])
+    c = base + (tgt - base) * abs(t)
+    return QColor(int(c[0]), int(c[1]), int(c[2]))
+
+
+class Treemap(QGraphicsView):
+    """Sector-grouped heatmap: tiles sized equally within sectors, coloured by return. Click emits the ticker."""
+    clicked_ticker = Signal(str)
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setScene(QGraphicsScene(self))
+        self.setStyleSheet(f"background:{theme.BG};border:1px solid {theme.GRID};")
+        self.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.df = pd.DataFrame()
+        self.items: dict[str, tuple] = {}
+        self.setMouseTracking(True)
+
+    def set_data(self, df: pd.DataFrame) -> None:
+        """df: index ticker; columns sector, ret, last, name."""
+        layout_changed = set(df.index) != set(self.df.index)
+        self.df = df
+        if layout_changed or not self.items:
+            self._layout()
+        else:
+            self._recolor()
+
+    def resizeEvent(self, e):
+        super().resizeEvent(e)
+        self._layout()
+
+    def _layout(self) -> None:
+        sc = self.scene()
+        sc.clear()
+        self.items = {}
+        self._shown = {}
+        if self.df.empty:
+            return
+        W, H = max(self.viewport().width() - 2, 50), max(self.viewport().height() - 2, 50)
+        sc.setSceneRect(0, 0, W, H)
+        groups = self.df.groupby("sector").size().sort_values(ascending=False)
+        srects = _squarify(groups.tolist(), 0, 0, W, H)
+        lim = float(np.nanpercentile(np.abs(self.df["ret"]), 95)) or 0.02
+        font = QFont(theme.MONO.split(",")[0], 8)
+        hfont = QFont(theme.MONO.split(",")[0], 8, QFont.Bold)
+        for (sec, n), (sx, sy, sw, sh) in zip(groups.items(), srects):
+            sub = self.df[self.df["sector"] == sec].sort_values("ret", ascending=False)
+            hdr = 14 if sh > 40 else 0
+            label = QGraphicsSimpleTextItem(str(sec)[:max(4, int(sw / 7))])
+            label.setFont(hfont)
+            label.setBrush(QColor(theme.AMBER))
+            label.setPos(sx + 3, sy + 1)
+            sc.addItem(label)
+            rects = _squarify([1.0] * len(sub), sx + 1, sy + hdr, sw - 2, sh - hdr - 1)
+            for (tk, row), (x, y, w, h) in zip(sub.iterrows(), rects):
+                rect = QGraphicsRectItem(QRectF(x, y, w, h))
+                rect.setPen(QPen(QColor(theme.BG), 1))
+                rect.setBrush(QBrush(heat_color(row["ret"], lim)))
+                rect.setData(0, tk)
+                rect.setToolTip(f"{row.get('name', tk)}\n{row['ret']:+.2%}  ₹{row['last']:,.2f}")
+                sc.addItem(rect)
+                txt = None
+                if w > 34 and h > 18:
+                    txt = QGraphicsSimpleTextItem(f"{tk.replace('.NS', '')}\n{row['ret']:+.1%}" if h > 28
+                                                  else tk.replace(".NS", ""))
+                    txt.setFont(font)
+                    txt.setBrush(QColor(theme.TEXT))
+                    txt.setPos(x + 2, y + 1)
+                    sc.addItem(txt)
+                self.items[tk] = (rect, txt)
+        self._lim = lim
+
+    def _recolor(self) -> None:
+        """Repaint only tiles whose rounded return/price changed (cheap enough for every live tick)."""
+        lim = getattr(self, "_lim", 0.02)
+        shown = self.__dict__.setdefault("_shown", {})
+        names = self.df["name"] if "name" in self.df else self.df.index.to_series()
+        for tk, r, last, name in zip(self.df.index, self.df["ret"].to_numpy(), self.df["last"].to_numpy(), names):
+            item = self.items.get(tk)
+            if item is None:
+                continue
+            key = (round(float(r), 4) if r == r else None, round(float(last), 2))
+            if shown.get(tk) == key:
+                continue
+            shown[tk] = key
+            rect, txt = item
+            rect.setBrush(QBrush(heat_color(r, lim)))
+            rect.setToolTip(f"{name}\n{r:+.2%}  ₹{last:,.2f}")
+            if txt is not None and "\n" in txt.text():
+                txt.setText(f"{tk.replace('.NS', '')}\n{r:+.1%}")
+
+    def mousePressEvent(self, e):
+        it = self.itemAt(e.position().toPoint())
+        while it is not None and it.data(0) is None:
+            it = None
+        if it is not None:
+            self.clicked_ticker.emit(it.data(0))
+        super().mousePressEvent(e)
+
+
+# --------------------------------------------------------------------------- charts
+class _DateAxis(pg.AxisItem):
+    def __init__(self, dates, **kw):
+        super().__init__(orientation="bottom", **kw)
+        self.dates = dates
+
+    def tickStrings(self, values, scale, spacing):
+        out = []
+        for v in values:
+            i = int(round(v))
+            out.append(self.dates[i].strftime("%d %b %y") if 0 <= i < len(self.dates) else "")
+        return out
+
+
+class CandleItem(pg.GraphicsObject):
+    def __init__(self, o, h, l, c):
+        super().__init__()
+        self.picture = pg.QtGui.QPicture()
+        p = pg.QtGui.QPainter(self.picture)
+        for i in range(len(c)):
+            if not np.isfinite([o[i], h[i], l[i], c[i]]).all():
+                continue
+            col = QColor(theme.GREEN if c[i] >= o[i] else theme.RED)
+            p.setPen(pg.mkPen(col))
+            p.drawLine(pg.QtCore.QPointF(i, l[i]), pg.QtCore.QPointF(i, h[i]))
+            p.setBrush(pg.mkBrush(col))
+            p.drawRect(QRectF(i - 0.35, o[i], 0.7, c[i] - o[i]))
+        p.end()
+
+    def paint(self, p, *args):
+        p.drawPicture(0, 0, self.picture)
+
+    def boundingRect(self):
+        return QRectF(self.picture.boundingRect())
+
+
+class PriceChart(pg.GraphicsLayoutWidget):
+    """Candles + moving averages + volume + RSI panes with a shared, zoomable x-axis and crosshair."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setBackground(theme.BG)
+
+    def plot(self, df: pd.DataFrame, title: str = "") -> None:
+        """df: Open/High/Low/Close/Volume indexed by date."""
+        if getattr(self, "_moved", None) is not None:     # drop the previous stock's crosshair handler
+            try:                                          # (it holds that stock's frame: a leak otherwise)
+                self.scene().sigMouseMoved.disconnect(self._moved)
+            except (RuntimeError, TypeError):
+                pass
+            self._moved = None
+        self.clear()
+        df = df.dropna(subset=["Close"])
+        if df.empty:
+            return
+        dates = list(df.index)
+        x = np.arange(len(df))
+        p1 = self.addPlot(row=0, col=0, title=title)
+        p1.hideAxis("bottom")
+        p1.showGrid(x=True, y=True, alpha=0.15)
+        if df[["Open", "High", "Low"]].notna().all().all():
+            p1.addItem(CandleItem(df["Open"].to_numpy(), df["High"].to_numpy(), df["Low"].to_numpy(), df["Close"].to_numpy()))
+        else:
+            p1.plot(x, df["Close"].to_numpy(), pen=pg.mkPen(theme.AMBER, width=1.5))
+        for n, col in [(50, theme.BLUE), (200, "#C77DFF")]:
+            p1.plot(x, df["Close"].rolling(n).mean().to_numpy(), pen=pg.mkPen(col, width=1, style=Qt.DashLine))
+        p2 = self.addPlot(row=1, col=0)
+        p2.hideAxis("bottom")
+        p2.setXLink(p1)
+        p2.setMaximumHeight(90)
+        vol = df["Volume"].fillna(0).to_numpy() if "Volume" in df else np.zeros(len(df))
+        p2.addItem(pg.BarGraphItem(x=x, height=vol, width=0.7, brush=pg.mkBrush("#2A3442")))
+        p3 = self.addPlot(row=2, col=0, axisItems={"bottom": _DateAxis(dates)})
+        p3.setXLink(p1)
+        p3.setMaximumHeight(90)
+        d = df["Close"].diff()
+        up = d.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
+        dn = (-d.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
+        rsi = 100 - 100 / (1 + up / dn.replace(0, np.nan))
+        p3.plot(x, rsi.to_numpy(), pen=pg.mkPen(theme.AMBER, width=1))
+        for lvl in (30, 70):
+            p3.addItem(pg.InfiniteLine(lvl, angle=0, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine)))
+        p3.setYRange(0, 100)
+        vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine))
+        p1.addItem(vline, ignoreBounds=True)
+        label = pg.TextItem(color=theme.TEXT, anchor=(0, 0))
+        p1.addItem(label, ignoreBounds=True)
+
+        def moved(pos):
+            if p1.sceneBoundingRect().contains(pos):
+                i = int(round(p1.vb.mapSceneToView(pos).x()))
+                if 0 <= i < len(df):
+                    r = df.iloc[i]
+                    vline.setPos(i)
+                    label.setText(f"{dates[i]:%d %b %Y}  O {r.get('Open', np.nan):,.1f}  H {r.get('High', np.nan):,.1f}  "
+                                  f"L {r.get('Low', np.nan):,.1f}  C {r['Close']:,.1f}")
+                    label.setPos(p1.vb.viewRange()[0][0], p1.vb.viewRange()[1][1])
+        self.scene().sigMouseMoved.connect(moved)
+        self._moved = moved
+        for p in (p1, p2):
+            p.setAutoVisible(y=True)                     # y-range follows the visible window when zooming
+            p.enableAutoRange(axis="y")
+        for p in (p1, p2, p3):
+            p.getAxis("left").setWidth(56)
+        p1.setXRange(max(0, len(df) - 250), len(df), padding=0.01)
+
+
+def line_chart(series: dict[str, pd.Series], title: str = "", logy: bool = False) -> pg.PlotWidget:
+    """Several date-indexed series on one date axis (aligned by position on the first series' index)."""
+    first = next(iter(series.values()))
+    dates = list(first.index)
+    w = pg.PlotWidget(axisItems={"bottom": _DateAxis(dates)}, title=title)
+    w.showGrid(x=True, y=True, alpha=0.15)
+    w.addLegend(offset=(10, 10))
+    if logy:
+        w.setLogMode(y=True)
+    for i, (name, s) in enumerate(series.items()):
+        s = s.reindex(first.index)
+        w.plot(np.arange(len(s)), s.to_numpy(), pen=pg.mkPen(theme.SERIES[i % len(theme.SERIES)], width=1.6), name=name)
+    return w
+
+
+def h1(text: str) -> QLabel:
+    lab = QLabel(text)
+    lab.setObjectName("h1")
+    return lab
+
+
+def h2(text: str) -> QLabel:
+    lab = QLabel(text)
+    lab.setObjectName("h2")
+    return lab
+
+
+def muted(text: str) -> QLabel:
+    lab = QLabel(text)
+    lab.setObjectName("muted")
+    lab.setWordWrap(True)
+    return lab

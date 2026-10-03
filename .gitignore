@@ -18,3 +18,12 @@ checkpoints/
 
 # local tooling
 .claude/
+
+# personal data
+data/watchlist.json
+data/daily/
+data/*_test.parquet
+
+# desktop build outputs
+build/
+packaging/niveshrl.ico

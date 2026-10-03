@@ -1,0 +1,13 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.12"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "niveshrl-core"
+version = "0.1.0"
+description = "NiveshRL C++ core: indicators, screener, backtest loop, live tick store"
+requires-python = ">=3.11"
+
+[tool.scikit-build]
+wheel.packages = []
+cmake.build-type = "Release"

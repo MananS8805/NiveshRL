@@ -4,12 +4,15 @@
 
 **A deep-learning research terminal for Indian equities**
 
-Stock rankers · volatility forecasting · market regimes · reinforcement-learning allocation · a backtest lab that charges real NSE costs
+Daily trading desk · news sentiment (FinBERT) · next-day model · screener · watchlist alerts · stock rankers · volatility · regimes · RL allocation · a backtest lab that charges real NSE costs
+
+Streamlit web terminal **and** a native Windows desktop app (PySide6 + a C++ core)
 
 ![Python](https://img.shields.io/badge/python-3.11%2B-3776AB?logo=python&logoColor=white)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-FF4B4B?logo=streamlit&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-101%20passing-2ea44f)
+![Qt](https://img.shields.io/badge/desktop-PySide6%20%2B%20C%2B%2B-41CD52?logo=qt&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-136%20passing-2ea44f)
 ![Market](https://img.shields.io/badge/market-NSE%20India-FF9F1C)
 
 </div>
@@ -26,14 +29,20 @@ NiveshRL asks whether deep learning adds anything over classic methods for **Ind
 | **Volatility forecaster** | LSTM vs GARCH(1,1), EWMA, historical | How volatile will each stock be next month? |
 | **Regime detector** | autoencoder → 2-D embedding → k-means, refit yearly | Is the market in a Bull, Neutral or Stress state right now? |
 | **RL allocator** | PPO actor-critic: permutation-equivariant Transformer encoder, Beta × Dirichlet policy | How should *this* investor split money across 29 NIFTY 50 stocks and cash? |
-| **Backtest lab** | vectorised engine + India cost/tax model | What would a strategy built on any signal really have earned after costs? |
+| **Backtest lab** | vectorised engine + India cost/tax model (C++ inner loop) | What would a strategy built on any signal really have earned after costs? |
+| **Next-day model** | LightGBM + 1-D CNN/Transformer sequence net, isotonic-calibrated ensemble | Which stocks are worth *watching* tomorrow? |
+| **News sentiment** | FinBERT (ProsusAI/finbert) on Google News headlines | What is the news saying about each stock in the last 48 h? |
+| **Daily desk** | briefing, measured market habits, screener, analyst score, watchlist alerts | What happened today, and what should I look at tomorrow? |
 
 ## The terminal
 
-`streamlit run app.py` opens a dark, terminal-style dashboard with eight screens:
+`streamlit run app.py` opens a dark, terminal-style dashboard with eleven screens (the desktop app has the same ones as dockable panels, see [Desktop app](#desktop-app-windows)):
 
 | Screen | What you can do |
 | --- | --- |
+| **TODAY** Daily briefing | What happened (deterministic narrative from the numbers), sectors, results this week, your watchlist, **top stocks to monitor tomorrow** (strength / weakness lists with reasons), measured market habits (day of week, after ±2% days, streaks, intraday first-hour direction) |
+| **SCRN** Screener | ~80 technical, fundamental, analyst, sentiment and model columns for the NIFTY 200; 8 presets (momentum breakout, oversold quality, value, high dividend, earnings this week, positive news buzz, strong trend, model favourites) plus custom AND filters; CSV export |
+| **WATCH** Watchlist | ★ Must have / ☆ Preferred tiers, notes, buy/sell targets; live price, P(up), sentiment, analyst score, days to results; alert badges (target hit, ±3% move, sentiment flip, results within 7 days, entered/left the top list) |
 | **MKT** Market monitor | **Live prices** (Yahoo Finance stream, refreshed every few seconds), NIFTY/VIX with regime shading, a NIFTY 200 sector heatmap (1D to 1Y), breadth, advancers/decliners, movers, the models' consensus picks. **Click any stock in the heatmap** to open its details in place: live price, valuation and profitability ratios, 52-week range, quarterly revenue and profit, income statement, balance sheet, cash flow, ownership, analyst targets and our models' view |
 | **LAB** Backtest lab | Pick any signal, portfolio size, weighting, rebalance period, vol target, regime filter, costs and period. Get a full tearsheet (equity, drawdown, rolling Sharpe, monthly heatmap, VaR, regime split, turnover and costs, holdings, signal deciles and IC); compare up to 6 strategies; export the NAV |
 | **RANK** Stock ranker | Out-of-sample scoreboard, IC by year, decile spreads, live ranking of all 194 stocks with sector filter |
@@ -42,6 +51,59 @@ NiveshRL asks whether deep learning adds anything over classic methods for **Ind
 | **RL** RL allocator | The RL agent vs classical portfolios, with a cost slider |
 | **PLAN** Investor plan | 6-question profile → whole-share orders, plain-language reasons, goal fan chart, 2020 crash replay |
 | **HELP** How it works | A plain-language explainer for non-specialists |
+
+## Daily trading desk
+
+One command refreshes everything the TODAY / SCRN / WATCH views need, after the 15:30 close:
+
+```bash
+python scripts/daily.py                 # ~5 min: prices, technicals, fundamentals, news, FinBERT, next-day model, monitor list, briefing
+```
+
+…or press **⟳ Refresh today's data** (Streamlit sidebar / desktop F5). The desktop app also runs it **automatically at 16:00 on weekdays**; `scripts/schedule_daily.ps1` registers an equivalent Windows scheduled task for when the app isn't running (optional, not registered by default). Each step is isolated: one failing step (e.g. Yahoo throttling) is recorded in `data/daily/<date>/status.json` and the rest still run.
+
+| Piece | How it works |
+| --- | --- |
+| **News** | Google News RSS per company, last 48 h, whole-word relevance filter with aliases (SBI, L&T…), SEO-junk filter, de-duplicated |
+| **Sentiment** | FinBERT probabilities → score = P(pos) − P(neg); per stock a 12-hour half-life recency-weighted mean, shrunk by headline count (n/(n+3)); "buzz" vs the stock's own history |
+| **Analyst score** (0–100) | 40% consensus (Yahoo recommendationMean), 30% mean-target upside, 20% 3-month change in buy share, 10% coverage depth. Third-party opinion, shown for context |
+| **Next-day model** | 41 causal features (31 stock, ranked cross-sectionally; 10 market), target = beats tomorrow's cross-sectional median. LightGBM + SeqNet (60-day window, CNN + Transformer) + logistic baseline, isotonic calibration, walk-forward by year with a 5-year rolling window and a purged gap |
+| **Monitor list** | 0.6 × calibrated P(up) + 0.15 × news + 0.15 × unusual activity + 0.1 × setup flags, top 10 each way, with plain-language reasons |
+| **Market habits** | Measured on NIFTY history, not opinions: day-of-week, after ±2% days, 3-day streaks, by regime; intraday stats from 60 days of 5-minute bars |
+
+### Next-day model: walk-forward out-of-sample, 2015 → Oct 2026
+
+2,900 trading days, ~194 stocks a day, each year predicted by models trained only on earlier years (`python scripts/train_nextday.py`, 91 min on CPU):
+
+| Model | AUC | Accuracy | Daily IC | IC t-stat | Top-10 hit rate | Top-10 excess / day | … after 0.25% round-trip costs |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| **Ensemble** (LightGBM + SeqNet, calibrated) | **0.526** | **51.8%** | **0.048** | 20.6 | **54.1%** | +0.10% | −0.07% |
+| LightGBM | 0.524 | 51.7% | 0.046 | 21.3 | 53.7% | +0.11% | −0.06% |
+| SeqNet (CNN + Transformer) | 0.522 | 51.7% | 0.041 | 16.9 | 53.3% | +0.04% | −0.13% |
+| Logistic regression | 0.519 | 51.4% | 0.036 | 15.5 | 53.0% | +0.05% | −0.11% |
+| Short-term reversal (baseline) | 0.511 | – | 0.017 | 7.0 | 50.2% | −0.08% | −0.25% |
+
+**What it says:** the signal is real and very consistent (IC t-stats near 20 over 2,900 days; the ensemble's top-10 picks beat the median 54% of the time), but it is small: buying the top 10 every day and selling the next day **loses money after Indian delivery costs**. That is why the app presents it as a *monitor list* (what to watch tomorrow), never as a trading system. 51–54% next-day accuracy is a normal, honest result for this problem.
+
+## Desktop app (Windows)
+
+```bash
+python -m niveshrl.desktop            # or NiveshRL.exe from the installer;  --tray starts minimised, --no-feed skips the live stream
+```
+
+A native PySide6 app with the same features and terminal look as the web view, built to stay open all day:
+
+- **Workspace:** a command bar (`Ctrl+K`, type `RELIANCE` or a screen code such as `SCRN`), a scrolling ticker strip, and dockable panels (Market, Today, Screener, Watchlist, Stock, Lab, Rankers, Risk, RL/Plan, Alerts). Panels drag, tab, float and close; the layout is saved to `%APPDATA%\NiveshRL`.
+- **Charts:** pyqtgraph candlesticks with SMA50/200, volume and RSI panes, a crosshair and smooth zoom; a squarified sector treemap heatmap.
+- **Tray app:** closing the window keeps the live feed, watchlist alerts (Windows notifications, once per alert per day) and the **16:00 pipeline** running. Optional start-with-Windows.
+- **Process model:** the UI thread only paints. The live feed runs on its own thread into the C++ tick store; file loads, Yahoo fundamentals and backtests run on a thread pool; the daily pipeline (FinBERT, LightGBM, DL) runs in a **separate worker process**, so model memory is returned to the OS after each run.
+- **Long-run hardening:** a watchdog restarts a dead or stalled feed (no ticks for 5 min in market hours) and notices a crashed worker; caches are bounded (LRU backtests, pruned fundamentals, only today's daily outputs); rotating logs in `%APPDATA%\NiveshRL\logs`; CPU/RAM/UI-latency shown in the status bar.
+
+**C++ core** (`cpp/`, pybind11, built with `pip install ./cpp`; everything falls back to Python if it's missing): exact ports of the pandas/NumPy indicator maths (EWM, rolling stats, Wilder RSI, true range, Supertrend), the screener filter engine, the backtest inner loop with the India cost model, and a fixed-memory tick store with 1-minute bars. Heavy calls release the GIL. Parity tests check results against the Python reference (worst backtest NAV difference 7.8e-15 across 16 configurations); Supertrend over the full panel goes from 1,210 ms to 1.4 ms.
+
+**Packaging:** `packaging\build.ps1` builds a one-folder PyInstaller app (`build\dist\NiveshRL\NiveshRL.exe`) with the research data staged for first-run copy to `%LOCALAPPDATA%\NiveshRL`; `build.ps1 -Installer` additionally compiles `packaging\installer.iss` with Inno Setup 6 into a per-user `NiveshRL-Setup.exe` (Start-menu and optional desktop shortcut, optional start-in-tray, uninstaller).
+
+**Soak test:** `python scripts/soak_desktop.py --minutes 360 --live` during market hours, or with a synthetic 200 ticks/s feed at any time. It cycles panels and stocks, samples RSS and UI tick time, and passes when memory growth after warm-up is within ±50 MB and the UI tick p99 is under 50 ms.
 
 ## Headline results
 
@@ -92,7 +154,7 @@ flowchart LR
 
 ```
 NiveshRL/
-├── app.py                      # Streamlit router (8 screens)
+├── app.py                      # Streamlit router (11 screens)
 ├── demo.bat                    # one-click setup + launch (Windows)
 ├── configs/                    # universe, India costs & tax, corporate actions, hyperparameters
 ├── data/
@@ -100,11 +162,16 @@ NiveshRL/
 │   └── predictions/            # walk-forward model outputs (committed, so the app runs out of the box)
 ├── src/niveshrl/
 │   ├── research/               # NIFTY 200 data, rank features, rankers, volatility, regimes, backtester
-│   ├── dashboard/              # theme, cached store, one module per screen
+│   ├── research/daily.py …     # daily pipeline: news, sentiment, analyst, technicals, screener, nextday, monitor, summary
+│   ├── dashboard/              # Streamlit: theme, cached store, one module per screen
+│   ├── desktop/                # PySide6 app: main window, panels, widgets, worker process, tray
+│   ├── livefeed.py, watchlist.py
 │   ├── models/, algos/         # Transformer encoder, actor-critic, from-scratch PPO/A2C
 │   └── *.py                    # RL data, features, costs, tax, env, rewards, baselines, planner, explain
 ├── scripts/                    # prepare_data, train_rankers, train_volatility, train_regimes, train_custom, evaluate, demo …
-├── tests/                      # 101 tests
+├── cpp/                        # C++ core (pybind11): indicators, screener, backtest loop, tick store
+├── packaging/                  # PyInstaller spec, Inno Setup script, build.ps1
+├── tests/                      # 136 tests
 └── report/                     # results tables and figures
 ```
 
@@ -124,7 +191,7 @@ python -m venv .venv && .venv/Scripts/activate      # Windows; use bin/activate 
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
 python scripts/prepare_data.py                     # download + data-quality report
-pytest                                             # 101 tests: costs, tax, constraints, env, no-lookahead, walk-forward leakage
+pytest                                             # 136 tests: costs, tax, env, no-lookahead, leakage, desk, C++ parity, desktop UI
 python scripts/sanity_toy.py                       # can PPO find the one drifting stock?
 python scripts/run_baselines.py --split val
 python scripts/train_custom.py --steps 500000 --seed 0
@@ -134,7 +201,11 @@ python scripts/evaluate.py --split val --agent "NiveshRL=runs/ppo_cnn_dsr_reb5_s
 python scripts/train_rankers.py                    # FFNN / LSTM / Transformer / logreg / momentum, walk-forward
 python scripts/train_volatility.py                 # LSTM vs GARCH(1,1) / EWMA / historical
 python scripts/train_regimes.py                    # autoencoder + k-means regimes
-streamlit run app.py
+python scripts/train_nextday.py                    # next-day LightGBM / SeqNet / ensemble, walk-forward (~1.5 h CPU)
+python scripts/daily.py                            # today's data: news + FinBERT, fundamentals, monitor list, briefing
+pip install ./cpp                                  # optional C++ core (needs MSVC build tools)
+streamlit run app.py                               # web terminal
+python -m niveshrl.desktop                         # Windows desktop app
 ```
 
 ## RL allocator: what's different from a typical DRL-portfolio project

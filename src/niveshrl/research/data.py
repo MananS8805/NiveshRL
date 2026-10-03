@@ -32,6 +32,9 @@ class Panel:
     names: pd.Series             # ticker -> company name
     bench: pd.Series             # NIFTY 50
     vix: pd.Series               # India VIX
+    open: pd.DataFrame | None = None   # adjusted with the same factor as close (None on old caches)
+    high: pd.DataFrame | None = None
+    low: pd.DataFrame | None = None
 
     @property
     def tickers(self) -> list[str]:
@@ -130,7 +133,8 @@ def load_panel(refresh: bool = False, end: str | None = None) -> Panel:
     uni = load_universe()
     if refresh or not PANEL_PATH.exists():
         raw = _download(uni["ticker"].tolist(), START, end)
-        pd.concat({"close": raw["Close"], "volume": raw["Volume"]}, axis=1).to_parquet(PANEL_PATH)
+        pd.concat({"close": raw["Close"], "volume": raw["Volume"], "open": raw["Open"], "high": raw["High"],
+                   "low": raw["Low"]}, axis=1).to_parquet(PANEL_PATH)
         ctx = _download(["^NSEI", "^INDIAVIX"], START, end)["Close"]
         ctx.columns = ["bench" if c == "^NSEI" else "vix" for c in ctx.columns]
         ctx.to_parquet(CONTEXT_PATH)
@@ -141,10 +145,19 @@ def load_panel(refresh: bool = False, end: str | None = None) -> Panel:
     volume = volume[close.columns]
     close = close.dropna(how="all")
     volume = volume.reindex(close.index)
+    raw_close = close
     close, _ = clean_close(close, volume)
     close, _ = adjust_corporate_actions(close)
+    ohl = {}
+    if {"open", "high", "low"} <= set(raw.columns.get_level_values(0)):
+        # Same per-day factor as the cleaned close (corporate actions, bad prints), so O/H/L/C agree.
+        factor = (close / raw_close).replace([np.inf, -np.inf], np.nan).ffill()
+        for k in ("open", "high", "low"):
+            ohl[k] = (raw[k].reindex(index=close.index, columns=close.columns) * factor).where(close.notna())
+        ohl["high"] = np.maximum(ohl["high"], close).where(close.notna())
+        ohl["low"] = np.minimum(ohl["low"], close).where(close.notna())
     meta = uni.set_index("ticker").reindex(close.columns)
     return Panel(close=close, volume=volume, sectors=meta["sector"].fillna("Other"),
                  names=meta["name"].fillna(pd.Series(close.columns, index=close.columns)),
                  bench=ctx["bench"].reindex(close.index).ffill(),
-                 vix=ctx["vix"].reindex(close.index).ffill())
+                 vix=ctx["vix"].reindex(close.index).ffill(), **ohl)

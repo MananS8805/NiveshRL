@@ -3,6 +3,9 @@
     streamlit run app.py
 
 Screens (sidebar):
+  TODAY daily briefing, market habits, top stocks to monitor tomorrow
+  SCRN  technical + fundamental + sentiment + model screener with presets
+  WATCH personal watchlist (must have / preferred) with alerts
   MKT   market monitor: NIFTY/VIX, regime, NIFTY 200 heatmap, breadth, movers, model consensus
   LAB   backtest lab: build a strategy from any model/factor signal, India costs, full tearsheet, compare
   RANK  deep-learning stock rankers (FFNN / LSTM / Transformer), out-of-sample record, live ranking
@@ -24,12 +27,15 @@ import streamlit as st
 
 st.set_page_config(page_title="NiveshRL Terminal", page_icon="📈", layout="wide", initial_sidebar_state="expanded")
 
-from niveshrl.dashboard import equity, lab, market, ranker, risk, rl, theme  # noqa: E402
+from niveshrl.dashboard import desk, equity, lab, market, ranker, risk, rl, theme  # noqa: E402
 
 theme.inject()
 
 SCREENS = {
+    "TODAY · Briefing + top picks": desk.today_page,
     "MKT  · Market monitor": market.page,
+    "SCRN · Screener": desk.screener_page,
+    "WATCH · Watchlist": desk.watch_page,
     "LAB  · Backtest lab": lab.page,
     "RANK · Stock ranker (DL)": ranker.page,
     "EQ   · Equity drilldown": equity.page,
@@ -41,6 +47,8 @@ SCREENS = {
 
 st.sidebar.markdown("# NiveshRL ▸ Terminal")
 choice = st.sidebar.radio("Screen", list(SCREENS), label_visibility="collapsed")
+st.sidebar.markdown("---")
+desk.refresh_widget()
 st.sidebar.markdown("---")
 st.sidebar.caption(rl.DISCLAIMER)
 SCREENS[choice]()

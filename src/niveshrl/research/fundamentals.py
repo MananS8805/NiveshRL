@@ -61,3 +61,67 @@ def crore(v) -> str:
     if abs(cr) >= 1e5:
         return f"₹{cr / 1e5:,.2f} L Cr"
     return f"₹{cr:,.0f} Cr"
+
+
+# --------------------------------------------------------------------------- whole-universe snapshot
+SNAPSHOT_KEYS = ["marketCap", "enterpriseValue", "trailingPE", "forwardPE", "priceToBook", "enterpriseToEbitda",
+                 "trailingPegRatio", "trailingEps", "earningsGrowth", "revenueGrowth", "returnOnEquity",
+                 "returnOnAssets", "operatingMargins", "profitMargins", "debtToEquity", "totalCash", "totalDebt",
+                 "dividendYield", "payoutRatio", "heldPercentInsiders", "heldPercentInstitutions",
+                 "recommendationMean", "recommendationKey", "numberOfAnalystOpinions", "targetMeanPrice",
+                 "currentPrice", "fiftyTwoWeekHigh", "fiftyTwoWeekLow"]
+
+
+def _one(ticker: str, retries: int = 3) -> dict:
+    """info + analyst recommendation trend + next earnings date for one ticker (with retry/backoff)."""
+    import time
+
+    import yfinance as yf
+
+    row = {"ticker": ticker}
+    for attempt in range(retries):
+        try:
+            tk = yf.Ticker(ticker)
+            info = tk.info or {}
+            row.update({k: info.get(k) for k in SNAPSHOT_KEYS})
+            try:
+                rec = tk.recommendations
+                if rec is not None and len(rec):
+                    rec = rec.set_index("period")
+                    for per, tag in [("0m", "now"), ("-3m", "3m")]:
+                        if per in rec.index:
+                            r = rec.loc[per]
+                            tot = float(r.sum())
+                            row[f"buy_share_{tag}"] = float(r.get("strongBuy", 0) + r.get("buy", 0)) / tot if tot else None
+            except Exception:
+                pass
+            try:
+                cal = tk.calendar or {}
+                ed = cal.get("Earnings Date")
+                if ed:
+                    row["next_earnings"] = pd.Timestamp(ed[0] if isinstance(ed, (list, tuple)) else ed)
+            except Exception:
+                pass
+            return row
+        except Exception as e:                      # rate limit / network: back off and retry
+            row["error"] = f"{type(e).__name__}: {str(e)[:80]}"
+            time.sleep(2 * (attempt + 1))
+    return row
+
+
+def snapshot_all(tickers: list[str], workers: int = 8, progress=None) -> pd.DataFrame:
+    """Fundamentals + analyst data for every ticker, fetched in parallel. ``progress(done, total)`` is optional."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    rows = []
+    with ThreadPoolExecutor(max_workers=workers) as ex:
+        futs = [ex.submit(_one, t) for t in tickers]
+        for i, fut in enumerate(as_completed(futs), 1):
+            rows.append(fut.result())
+            if progress:
+                progress(i, len(futs))
+    df = pd.DataFrame(rows).set_index("ticker").reindex(tickers)
+    for k in ("dividendYield", "debtToEquity"):             # Yahoo gives these in percent
+        if k in df:
+            df[k] = pd.to_numeric(df[k], errors="coerce") / 100
+    return df

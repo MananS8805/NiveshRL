@@ -1,0 +1,524 @@
+"""Main window: command bar, live ticker strip, dockable panels, status bar, alerts and watchdogs.
+
+Threading model (nothing slow runs on the UI thread):
+  * UI thread        painting + cheap overlays of live ticks on precomputed frames
+  * feed thread      Yahoo WebSocket -> C++ TickStore + dict (``livefeed.Feed``)
+  * Qt thread pool   file loads, Yahoo fundamentals, backtests, RL plan (``widgets.run_async``)
+  * worker process   the daily pipeline: FinBERT, LightGBM/DL, briefing (``worker.PipelineRunner``)
+"""
+from __future__ import annotations
+
+import gc
+import logging
+import os
+import time
+from datetime import datetime
+
+import psutil
+from PySide6.QtCore import QByteArray, QSettings, QStringListModel, Qt, QTimer, Signal, QObject
+from PySide6.QtGui import QAction, QKeySequence, QPainter, QTextDocument
+from PySide6.QtWidgets import (QCompleter, QDockWidget, QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox,
+                               QProgressBar, QPushButton, QSizePolicy, QToolBar, QVBoxLayout, QWidget)
+
+from .. import watchlist as wl
+from ..livefeed import IST, Feed, market_open
+from . import data, theme
+from .panels import Panel, vbox
+from .panels.lab import LabPanel
+from .panels.market import MarketBase, MarketPanel, ticker_strip_text
+from .panels.research import PlanPanel, RankersPanel, RiskPanel
+from .panels.screener import ScreenerPanel
+from .panels.stock import StockPanel
+from .panels.today import TodayPanel
+from .panels.watchlist import WatchlistPanel, watch_rows
+from .widgets import run_async
+from .worker import PipelineRunner, Scheduler
+
+log = logging.getLogger("niveshrl.ui")
+APPDATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "NiveshRL")
+STALE_RESTART_S = 300          # restart the feed if no tick for 5 min while the market is open
+
+
+class AppContext(QObject):
+    watchlist_changed = Signal()
+    daily_updated = Signal()
+    alert = Signal(str, str)                  # (title, message)
+
+    def __init__(self):
+        super().__init__()
+        self.feed: Feed | None = None
+        self.runner = PipelineRunner(self)
+        self.scheduler = Scheduler(self.runner, parent=self)
+        self.feed_restarts = 0
+
+
+class TickerStrip(QWidget):
+    """Continuously scrolling tape of index and watchlist quotes (rendered rich text, 30 fps)."""
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setFixedHeight(24)
+        self.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.setMinimumWidth(400)
+        self.doc = QTextDocument()
+        self.doc.setDefaultStyleSheet(f"body {{ color:{theme.TEXT}; font-family:{theme.MONO}; font-size:12px; }}")
+        self.offset = 0.0
+        self.timer = QTimer(self)
+        self.timer.setInterval(33)
+        self.timer.timeout.connect(self._step)
+        self.timer.start()
+
+    def set_html(self, html: str) -> None:
+        if html != getattr(self, "_html", None):
+            self._html = html
+            self.doc.setHtml(f"<body><nobr>{html} &nbsp;│&nbsp; </nobr></body>")
+            self.doc.setTextWidth(-1)
+
+    def _step(self) -> None:
+        if not self.isVisible():
+            return
+        self.offset += 1.0
+        w = self.doc.idealWidth()
+        if w > 0 and self.offset > w:
+            self.offset -= w
+        self.update()
+
+    def paintEvent(self, e):
+        p = QPainter(self)
+        p.fillRect(self.rect(), Qt.GlobalColor.black)
+        w = self.doc.idealWidth()
+        if w <= 0:
+            return
+        x = -self.offset
+        while x < self.width():
+            p.save()
+            p.translate(x, 1)
+            self.doc.drawContents(p)
+            p.restore()
+            x += w
+
+
+class AlertsPanel(Panel):
+    title = "Alerts"
+    code = "ALRT"
+
+    def __init__(self, ctx, parent=None):
+        super().__init__(ctx, parent)
+        lay = vbox(self)
+        self.list = QListWidget()
+        lay.addWidget(self.list)
+        self.list.itemDoubleClicked.connect(lambda it: it.data(Qt.UserRole) and self.stock_selected.emit(it.data(Qt.UserRole)))
+
+    def add(self, ticker: str, text: str) -> None:
+        from PySide6.QtWidgets import QListWidgetItem
+        it = QListWidgetItem(f"{datetime.now(IST):%H:%M:%S}  {ticker.replace('.NS', ''):<12} {text}")
+        it.setData(Qt.UserRole, ticker if ticker.endswith(".NS") else None)
+        self.list.insertItem(0, it)
+        while self.list.count() > 500:                    # bounded
+            self.list.takeItem(self.list.count() - 1)
+
+
+PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
+          AlertsPanel]
+
+
+class MainWindow(QMainWindow):
+    def __init__(self, ctx: AppContext | None = None, start_feed: bool = True):
+        super().__init__()
+        self.ctx = ctx or AppContext()
+        self.start_feed = start_feed
+        self.setWindowTitle("NiveshRL · trading desk")
+        self.resize(1600, 960)
+        self.setDockNestingEnabled(True)
+        self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowTabbedDocks | QMainWindow.AllowNestedDocks)
+        self.settings = QSettings(os.path.join(APPDATA, "layout.ini"), QSettings.IniFormat)
+        self.panels: dict[str, Panel] = {}
+        self.docks: dict[str, QDockWidget] = {}
+        self.base: MarketBase | None = None
+        self._ticks_prev = (time.time(), 0)
+        self._alerted: set[tuple[str, str, str]] = set()
+        self.proc = psutil.Process()
+        self.proc.cpu_percent(None)
+        self._build_toolbar()
+        self.strip = TickerStrip()
+        tb2 = QToolBar("Ticker")
+        tb2.setMovable(False)
+        tb2.addWidget(self.strip)
+        self.addToolBarBreak()
+        self.addToolBar(Qt.TopToolBarArea, tb2)
+        self._build_docks()
+        self._build_status()
+        self._wire()
+        self.loading = QLabel("Loading NIFTY 200 panel…")
+        self.statusBar().addWidget(self.loading)
+        run_async(data.panel, self._panel_ready, on_error=lambda e: self._fatal(e))
+
+    # ------------------------------------------------------------------ construction
+    def _build_toolbar(self) -> None:
+        tb = QToolBar("Command")
+        tb.setMovable(False)
+        tb.setObjectName("command")
+        logo = QLabel(f"<b style='color:{theme.AMBER}'>NIVESH</b><b>RL</b> ")
+        tb.addWidget(logo)
+        self.cmd = QLineEdit()
+        self.cmd.setPlaceholderText("Command: RELIANCE <Enter> · MKT · TODAY · SCRN · WATCH · LAB · RANK · RISK · PLAN · ALRT · HELP   (Ctrl+K)")
+        self.cmd.setMinimumWidth(520)
+        self.cmd.returnPressed.connect(self._command)
+        self.completer = QCompleter()
+        self.completer.setCaseSensitivity(Qt.CaseInsensitive)
+        self.completer.setFilterMode(Qt.MatchContains)
+        self.cmd.setCompleter(self.completer)
+        tb.addWidget(self.cmd)
+        self.refresh_btn = QPushButton("⟳ Refresh today's data (F5)")
+        self.refresh_btn.setObjectName("primary")
+        self.refresh_btn.clicked.connect(self.run_pipeline)
+        tb.addWidget(self.refresh_btn)
+        self.prog = QProgressBar()
+        self.prog.setMaximumWidth(260)
+        self.prog.setVisible(False)
+        tb.addWidget(self.prog)
+        self.addToolBar(Qt.TopToolBarArea, tb)
+        for key, fn in [("Ctrl+K", lambda: (self.cmd.setFocus(), self.cmd.selectAll())), ("F5", self.run_pipeline)]:
+            a = QAction(self)
+            a.setShortcut(QKeySequence(key))
+            a.triggered.connect(fn)
+            self.addAction(a)
+        view = self.menuBar().addMenu("&View")
+        self.view_menu = view
+        reset = QAction("Reset layout", self)
+        reset.triggered.connect(self.reset_layout)
+        view.addAction(reset)
+        opts = self.menuBar().addMenu("&Options")
+        self.auto_act = QAction("Run daily pipeline automatically at 16:00 (Mon–Fri)", self, checkable=True)
+        self.auto_act.setChecked(self.ctx.scheduler.enabled)
+        self.auto_act.toggled.connect(self.ctx.scheduler.set_enabled)
+        opts.addAction(self.auto_act)
+        self.tray_act = QAction("Keep running in the tray when the window is closed", self, checkable=True)
+        self.tray_act.setChecked(QSettings("NiveshRL", "NiveshRL").value("close_to_tray", True, type=bool))
+        self.tray_act.toggled.connect(lambda on: QSettings("NiveshRL", "NiveshRL").setValue("close_to_tray", on))
+        opts.addAction(self.tray_act)
+        helpm = self.menuBar().addMenu("&Help")
+        about = QAction("About NiveshRL", self)
+        about.triggered.connect(self._about)
+        helpm.addAction(about)
+
+    def _build_docks(self) -> None:
+        self.stock = StockPanel(self.ctx)
+        for cls in PANELS:
+            p = cls(self.ctx)
+            self.panels[p.code] = p
+        self.panels[self.stock.code] = self.stock
+        for code, p in self.panels.items():
+            d = QDockWidget(f"{p.title}  ·  {code}", self)
+            d.setObjectName(f"dock_{code}")
+            d.setWidget(p)
+            d.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetClosable)
+            d.visibilityChanged.connect(lambda vis, p=p: vis and self.base is not None and p.ensure_loaded())
+            self.docks[code] = d
+            self.view_menu.addAction(d.toggleViewAction())
+            p.stock_selected.connect(self.open_stock)
+        self.default_layout()
+        self._default_state = self.saveState()
+        state = self.settings.value("state")
+        geo = self.settings.value("geometry")
+        if isinstance(geo, QByteArray):
+            self.restoreGeometry(geo)
+        if isinstance(state, QByteArray):
+            self.restoreState(state)
+
+    def default_layout(self) -> None:
+        d = self.docks
+        self.addDockWidget(Qt.LeftDockWidgetArea, d["MKT"])
+        for c in ["TODAY", "SCRN", "LAB", "RANK", "RISK", "PLAN"]:
+            self.tabifyDockWidget(d["MKT"], d[c])
+        self.addDockWidget(Qt.RightDockWidgetArea, d["DES"])
+        self.addDockWidget(Qt.RightDockWidgetArea, d["WATCH"])
+        self.tabifyDockWidget(d["WATCH"], d["ALRT"])
+        self.splitDockWidget(d["DES"], d["WATCH"], Qt.Vertical)
+        for dk in d.values():
+            dk.show()
+        d["MKT"].raise_()
+        d["WATCH"].raise_()
+        self.resizeDocks([d["MKT"], d["DES"]], [900, 700], Qt.Horizontal)
+        self.resizeDocks([d["DES"], d["WATCH"]], [700, 240], Qt.Vertical)
+
+    def reset_layout(self) -> None:
+        for dk in self.docks.values():
+            dk.setFloating(False)
+            dk.show()
+        self.restoreState(self._default_state)
+
+    def _build_status(self) -> None:
+        sb = self.statusBar()
+        self.s_feed, self.s_ticks, self.s_pipe, self.s_data, self.s_sys, self.s_clock = (QLabel() for _ in range(6))
+        for w in (self.s_feed, self.s_ticks, self.s_pipe, self.s_data):
+            sb.addWidget(w)
+        sb.addPermanentWidget(self.s_sys)
+        sb.addPermanentWidget(self.s_clock)
+
+    def _wire(self) -> None:
+        r = self.ctx.runner
+        r.progress.connect(self._pipe_progress)
+        r.finished.connect(self._pipe_done)
+        r.failed.connect(self._pipe_failed)
+        self.ctx.watchlist_changed.connect(self._watchlist_changed)
+        self.t_tick = QTimer(self)
+        self.t_tick.setInterval(1000)
+        self.t_tick.timeout.connect(self._tick)
+        self.t_status = QTimer(self)
+        self.t_status.setInterval(2000)
+        self.t_status.timeout.connect(self._status)
+        self.t_status.start()
+        self.t_alerts = QTimer(self)
+        self.t_alerts.setInterval(60_000)
+        self.t_alerts.timeout.connect(self._check_alerts)
+        self.t_house = QTimer(self)
+        self.t_house.setInterval(10 * 60_000)
+        self.t_house.timeout.connect(self._housekeeping)
+        self.t_house.start()
+        self.t_watch = QTimer(self)
+        self.t_watch.setInterval(30_000)
+        self.t_watch.timeout.connect(self._watchdog)
+        self.t_watch.start()
+
+    # ------------------------------------------------------------------ startup
+    def _panel_ready(self, p) -> None:
+        self.loading.setText("")
+        self.statusBar().removeWidget(self.loading)
+        self.base = MarketBase()
+        names = [f"{t.replace('.NS', '')} · {str(p.names.get(t, ''))[:30]}" for t in sorted(p.tickers)]
+        codes = [f"{c} · {pp.title}" for c, pp in self.panels.items()] + ["HELP · keyboard and commands"]
+        self.completer.setModel(QStringListModel(codes + names, self.completer))
+        if self.start_feed:
+            self._start_feed()
+        for code, d in self.docks.items():
+            if d.isVisible() and not d.visibleRegion().isEmpty():
+                self.panels[code].ensure_loaded()
+        self._refresh_strip()
+        self.t_tick.start()
+        self.t_alerts.start()
+        QTimer.singleShot(5000, self._check_alerts)
+        log.info("panel ready: %d tickers, last date %s", len(p.tickers), p.close.index[-1].date())
+
+    def _start_feed(self) -> None:
+        if self.ctx.feed is not None:
+            self.ctx.feed.stop()
+        self.ctx.feed = Feed(data.panel().tickers).start()
+        self._ticks_prev = (time.time(), 0)
+        log.info("feed started (%s)", "C++ TickStore" if self.ctx.feed.store is not None else "dict store")
+
+    def _fatal(self, msg: str) -> None:
+        log.error("startup failed: %s", msg)
+        QMessageBox.critical(self, "NiveshRL", "Could not load the price panel.\n\nRun demo.bat (or "
+                             "python scripts/build_panel.py) first.\n\n" + msg[-600:])
+
+    # ------------------------------------------------------------------ navigation
+    def open_stock(self, ticker: str) -> None:
+        if not ticker or ticker not in data.panel().tickers:
+            return
+        self.stock._loaded = True
+        self.stock.show_stock(ticker)
+        self.docks["DES"].show()
+        self.docks["DES"].raise_()
+
+    def show_panel(self, code: str) -> None:
+        d = self.docks.get(code)
+        if d:
+            d.show()
+            d.raise_()
+            self.panels[code].ensure_loaded()
+
+    def _command(self) -> None:
+        txt = self.cmd.text().strip()
+        self.cmd.clear()
+        if not txt:
+            return
+        head = txt.split("·")[0].strip().split()[0].upper()
+        if head in self.panels:
+            self.show_panel(head)
+            return
+        if head == "HELP":
+            self._about()
+            return
+        t = head if head.endswith(".NS") else head + ".NS"
+        if self.base is not None and t in data.panel().tickers:
+            self.open_stock(t)
+            return
+        p = data.panel()
+        hits = [k for k, v in p.names.items() if txt.lower() in str(v).lower()]
+        if hits:
+            self.open_stock(hits[0])
+        else:
+            self.statusBar().showMessage(f"Unknown command or symbol: {txt}", 4000)
+
+    # ------------------------------------------------------------------ timers
+    def _visible_panels(self):
+        for code, d in self.docks.items():
+            if d.isVisible() and not d.visibleRegion().isEmpty():
+                yield self.panels[code]
+
+    def _tick(self) -> None:
+        t0 = time.perf_counter()
+        for p in self._visible_panels():
+            if p._loaded:
+                try:
+                    p.on_tick()
+                except Exception:
+                    log.exception("on_tick failed in %s", p.code)
+        self._refresh_strip()
+        self._ui_ms = (time.perf_counter() - t0) * 1000
+
+    def _refresh_strip(self) -> None:
+        try:
+            mt = wl.PATH.stat().st_mtime
+        except OSError:
+            mt = 0
+        if getattr(self, "_wl_mtime", None) != mt:      # re-read the watchlist file only when it changes
+            self._wl_mtime, self._wl_syms = mt, sorted(wl.load())[:30]
+        syms = self._wl_syms or (data.panel().tickers[:20] if self.base else [])
+        self.strip.set_html(ticker_strip_text(self.ctx.feed, self.base, syms))
+
+    def _status(self) -> None:
+        f = self.ctx.feed
+        if f is not None:
+            text, lvl = f.status()
+            col = {"live": theme.GREEN, "stale": theme.AMBER, "closed": theme.MUTED, "offline": theme.RED}[lvl]
+            self.s_feed.setText(f"<span style='color:{col}'>● {text}</span>")
+            now = time.time()
+            t_prev, n_prev = self._ticks_prev
+            rate = (f.n_msgs - n_prev) / max(now - t_prev, 1e-6)
+            self._ticks_prev = (now, f.n_msgs)
+            self.s_ticks.setText(f"{rate:.1f} ticks/s · {f.n_msgs:,} total")
+        r = self.ctx.runner
+        if r.running:
+            self.s_pipe.setText(f"pipeline: {r.state[0]} {r.state[1]:.0%}")
+        else:
+            nxt = "auto 16:00 on" if self.ctx.scheduler.enabled else "auto off"
+            self.s_pipe.setText(f"pipeline: idle · {nxt}")
+        m = data.daily.latest_meta()
+        self.s_data.setText(f"data {m['trading_day']} (ran {m['ran_at'][5:16].replace('T', ' ')})" if m else "no daily data")
+        mem = self.proc.memory_info().rss / 2 ** 20
+        cpu = self.proc.cpu_percent(None) / max(psutil.cpu_count() or 1, 1)
+        ui = getattr(self, "_ui_ms", 0.0)
+        self.s_sys.setText(f"CPU {cpu:.0f}% · RAM {mem:,.0f} MB · UI {ui:.0f} ms")
+        self.s_clock.setText(datetime.now(IST).strftime("%a %d %b %H:%M:%S IST"))
+
+    def _watchdog(self) -> None:
+        f = self.ctx.feed
+        if f is None or not self.start_feed:
+            return
+        restart = None
+        if not f.alive:
+            restart = "feed thread died"
+        elif market_open() and f.last_msg_at and time.time() - f.last_msg_at > STALE_RESTART_S:
+            restart = f"no ticks for {time.time() - f.last_msg_at:.0f}s during market hours"
+        if restart:
+            self.ctx.feed_restarts += 1
+            log.warning("watchdog: restarting feed (%s), restart #%d", restart, self.ctx.feed_restarts)
+            self._start_feed()
+
+    def _housekeeping(self) -> None:
+        data.prune_fundamentals()
+        data.drop_stale_daily()
+        gc.collect()
+        log.info("housekeeping: rss=%.0f MB cache=%d entries feed_msgs=%s restarts=%d",
+                 self.proc.memory_info().rss / 2 ** 20, data.cache_size(),
+                 self.ctx.feed.n_msgs if self.ctx.feed else 0, self.ctx.feed_restarts)
+
+    def _check_alerts(self) -> None:
+        if self.base is None:
+            return
+        try:
+            _, alerts = watch_rows(self.ctx.feed)
+        except Exception:
+            log.exception("alert check failed")
+            return
+        today = datetime.now(IST).date().isoformat()
+        for tk, items in alerts.items():
+            for a in items:
+                key = (today, tk, a.split(" ")[0] + a.split(" ")[-1])
+                if key in self._alerted:
+                    continue
+                self._alerted.add(key)
+                self.panels["ALRT"].add(tk, a)
+                self.ctx.alert.emit(f"NiveshRL · {tk.replace('.NS', '')}", a)
+                log.info("alert %s: %s", tk, a)
+        self._alerted = {k for k in self._alerted if k[0] == today}           # bounded: today only
+
+    # ------------------------------------------------------------------ pipeline
+    def run_pipeline(self) -> None:
+        if self.ctx.runner.running:
+            self.statusBar().showMessage("The daily pipeline is already running.", 3000)
+            return
+        self.ctx.runner.start()
+
+    def _pipe_progress(self, step: str, frac: float) -> None:
+        self.prog.setVisible(True)
+        self.prog.setValue(int(frac * 100))
+        self.prog.setFormat(f"{step} %p%")
+        self.refresh_btn.setEnabled(False)
+
+    def _pipe_done(self, meta: dict) -> None:
+        self.prog.setVisible(False)
+        self.refresh_btn.setEnabled(True)
+        data.clear("daily:")
+
+        def reload_panel():                       # prices step updated the parquet: reload off the UI thread
+            data.clear("panel")
+            data.panel()
+            return MarketBase()
+        run_async(reload_panel, self._panel_reloaded)
+        bad = [k for k, v in meta.get("steps", {}).items() if not v.get("ok")]
+        msg = f"Daily data refreshed for {meta.get('trading_day')}" + (f" · failed: {', '.join(bad)}" if bad else "")
+        self.statusBar().showMessage(msg, 10_000)
+        self.ctx.alert.emit("NiveshRL", msg)
+
+    def _panel_reloaded(self, base) -> None:
+        self.base = base
+        for p in self.panels.values():
+            p.on_daily_update()
+        self.ctx.daily_updated.emit()
+
+    def _pipe_failed(self, msg: str) -> None:
+        self.prog.setVisible(False)
+        self.refresh_btn.setEnabled(True)
+        self.statusBar().showMessage("Daily pipeline failed: " + msg.strip().splitlines()[-1][:160], 15_000)
+
+    def _watchlist_changed(self) -> None:
+        self.panels["WATCH"].refresh()
+        if self.panels["TODAY"]._loaded:
+            self.panels["TODAY"].refresh()
+        self._refresh_strip()
+
+    # ------------------------------------------------------------------ misc
+    def _about(self) -> None:
+        QMessageBox.information(self, "NiveshRL", (
+            "NiveshRL trading desk\n\n"
+            "Commands (Ctrl+K): type a symbol (RELIANCE) or a screen code: MKT, TODAY, SCRN, WATCH, LAB, RANK, RISK, "
+            "PLAN, ALRT, DES.\nF5 runs the daily pipeline (prices, fundamentals, news + FinBERT, next-day model, "
+            "briefing). Panels can be dragged, tabbed, floated and closed; View → Reset layout restores them.\n\n"
+            "Educational project, not investment advice. Not registered with SEBI."))
+
+    def save_layout(self) -> None:
+        self.settings.setValue("state", self.saveState())
+        self.settings.setValue("geometry", self.saveGeometry())
+        self.settings.sync()
+
+    def shutdown(self) -> None:
+        self.save_layout()
+        for t in (self.t_tick, self.t_status, self.t_alerts, self.t_house, self.t_watch, self.strip.timer):
+            t.stop()
+        if self.ctx.feed is not None:
+            self.ctx.feed.stop()
+        if self.ctx.runner.running:
+            self.ctx.runner.stop()
+
+    def closeEvent(self, e):
+        self.save_layout()
+        if getattr(self, "tray", None) is not None and self.tray_act.isChecked() and not getattr(self, "_quitting", False):
+            e.ignore()
+            self.hide()
+            self.tray.notify_hidden()
+            return
+        self.shutdown()
+        e.accept()

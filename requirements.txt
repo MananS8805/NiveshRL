@@ -14,4 +14,12 @@ tensorboard>=2.16
 pyyaml>=6
 arch>=7.0
 scikit-learn>=1.4
+transformers>=4.40     # FinBERT news sentiment (model weights ~440 MB, downloaded on first use)
+lightgbm>=4.3          # next-day model
+psutil>=5.9
+PySide6>=6.6           # desktop app
+pyqtgraph>=0.13
+pyinstaller>=6.0       # packaging
 pytest>=8
+pytest-qt>=4.4
+# C++ core (optional but recommended): pip install ./cpp   (needs MSVC / Visual Studio Build Tools)
