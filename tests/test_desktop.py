@@ -145,3 +145,51 @@ def test_pipeline_runner_reports_progress_and_done(qtbot, monkeypatch):
     assert blocker.args[0]["trading_day"] == "2026-10-01"
     assert ("x", 0.5) in got
     assert not r.running
+
+
+def test_frame_table_keeps_given_order_until_header_clicked(qtbot):
+    """Regression: enabling sorting used to sort by column 0 descending, so ranked lists showed rank 194 first."""
+    import pandas as pd
+    from PySide6.QtCore import Qt
+    from niveshrl.desktop.widgets import FrameTable
+    t = FrameTable()
+    qtbot.addWidget(t)
+    t.set_frame(pd.DataFrame({"Rank": [1, 2, 3], "x": ["c", "a", "b"]}, index=["A", "B", "C"]))
+    shown = [t.proxy.index(i, 0).data(Qt.UserRole) for i in range(3)]
+    assert shown == [1, 2, 3]
+
+
+def test_one_screen_at_a_time_and_back(qtbot, window):
+    _wait_ready(qtbot, window)
+    window.show_panel("MKT")
+    window.show_panel("RANK")
+    assert window.pages.currentWidget() is window.panels["RANK"]
+    assert [p.code for p in window._visible_panels()] == ["RANK"]
+    window.go_back()
+    assert window.current == "MKT"
+
+
+def test_rankers_live_ranking_starts_at_rank_one(qtbot, window):
+    _wait_ready(qtbot, window)
+    window.show_panel("RANK")
+    rk = window.panels["RANK"]
+    if rk.table.empty:
+        pytest.skip("no ranker predictions")
+    assert rk.live.proxy.index(0, 0).data() == "1"
+    rk.search.setText("bank")
+    assert all("bank" in (str(lbl) + rk.table.loc[lbl, "Company"]).lower() for lbl in rk.live.model_.labels)
+    rk.search.setText("")
+
+
+def test_price_chart_y_axis_fits_visible_window(qtbot):
+    import pandas as pd
+    from niveshrl.desktop.widgets import PriceChart
+    c = PriceChart()
+    qtbot.addWidget(c)
+    idx = pd.bdate_range("2020-01-01", periods=1500)
+    close = pd.Series(np.r_[np.full(1250, 4000.0), np.full(250, 2000.0)], index=idx)
+    df = pd.DataFrame({"Open": close, "High": close + 10, "Low": close - 10, "Close": close, "Volume": 1.0})
+    c.plot(df)
+    c.set_range("6M")
+    y0, y1 = c.plots[0].vb.viewRange()[1]
+    assert y1 < 2500, "y-axis should fit the visible last 6 months (~2000), not the whole history (4000)"

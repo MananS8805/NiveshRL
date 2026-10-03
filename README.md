@@ -12,7 +12,7 @@ Streamlit web terminal **and** a native Windows desktop app (PySide6 + a C++ cor
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.x-EE4C2C?logo=pytorch&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/Streamlit-dashboard-FF4B4B?logo=streamlit&logoColor=white)
 ![Qt](https://img.shields.io/badge/desktop-PySide6%20%2B%20C%2B%2B-41CD52?logo=qt&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-136%20passing-2ea44f)
+![Tests](https://img.shields.io/badge/tests-140%20passing-2ea44f)
 ![Market](https://img.shields.io/badge/market-NSE%20India-FF9F1C)
 
 </div>
@@ -171,7 +171,7 @@ NiveshRL/
 ├── scripts/                    # prepare_data, train_rankers, train_volatility, train_regimes, train_custom, evaluate, demo …
 ├── cpp/                        # C++ core (pybind11): indicators, screener, backtest loop, tick store
 ├── packaging/                  # PyInstaller spec, Inno Setup script, build.ps1
-├── tests/                      # 136 tests
+├── tests/                      # 140 tests
 └── report/                     # results tables and figures
 ```
 
@@ -191,7 +191,7 @@ python -m venv .venv && .venv/Scripts/activate      # Windows; use bin/activate 
 pip install torch --index-url https://download.pytorch.org/whl/cpu
 pip install -r requirements.txt && pip install -e .
 python scripts/prepare_data.py                     # download + data-quality report
-pytest                                             # 136 tests: costs, tax, env, no-lookahead, leakage, desk, C++ parity, desktop UI
+pytest                                             # 140 tests: costs, tax, env, no-lookahead, leakage, desk, C++ parity, desktop UI
 python scripts/sanity_toy.py                       # can PPO find the one drifting stock?
 python scripts/run_baselines.py --split val
 python scripts/train_custom.py --steps 500000 --seed 0

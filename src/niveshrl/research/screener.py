@@ -56,6 +56,21 @@ PRESETS = {
 }
 
 
+def fill_roe(fund: pd.DataFrame) -> pd.DataFrame:
+    """Yahoo reports returnOnEquity for only ~1 in 6 NSE stocks. Where it is missing, use the identity
+    ROE = EPS / book value per share = (P/B) / (P/E), only when both ratios are positive (a loss-maker or
+    negative book value has no meaningful ROE this way). Yahoo's own figure is kept wherever it exists."""
+    if not {"priceToBook", "trailingPE"} <= set(fund.columns):
+        return fund
+    fund = fund.copy()
+    pb = pd.to_numeric(fund["priceToBook"], errors="coerce")
+    pe = pd.to_numeric(fund["trailingPE"], errors="coerce")
+    derived = (pb / pe).where((pb > 0) & (pe > 0))
+    roe = pd.to_numeric(fund.get("returnOnEquity"), errors="coerce") if "returnOnEquity" in fund else derived * np.nan
+    fund["returnOnEquity"] = roe.fillna(derived)
+    return fund
+
+
 def build_table(folder: Path, monthly: pd.DataFrame | None = None) -> pd.DataFrame:
     """Join every daily output into one screener table (index = ticker)."""
     tech = pd.read_parquet(folder / "technicals.parquet")
@@ -68,6 +83,7 @@ def build_table(folder: Path, monthly: pd.DataFrame | None = None) -> pd.DataFra
         fund["days_to_earnings"] = (ne - day).dt.days
         if "marketCap" in fund:
             fund["marketCap"] = pd.to_numeric(fund["marketCap"], errors="coerce") / 1e7      # ₹ crore
+        fund = fill_roe(fund)
         t = t.join(fund[[c for c in FUND_COLUMNS if c in fund]], how="left")
     s = folder / "sentiment.parquet"
     if s.exists():

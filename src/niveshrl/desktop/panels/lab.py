@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pyqtgraph as pg
 from PySide6.QtWidgets import (QCheckBox, QComboBox, QDoubleSpinBox, QFormLayout, QGridLayout, QHBoxLayout,
                                QLineEdit, QPushButton, QSpinBox, QTabWidget, QVBoxLayout, QWidget)
 
@@ -12,7 +11,7 @@ from ...metrics import drawdown
 from ...research import backtest as bt
 from ...research.regime import REGIMES
 from .. import data, theme
-from ..widgets import FrameTable, KpiRow, h2, line_chart, muted, run_async
+from ..widgets import FrameTable, KpiRow, line_chart, muted, run_async
 from . import Panel, vbox
 
 

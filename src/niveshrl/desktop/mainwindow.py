@@ -1,4 +1,5 @@
-"""Main window: command bar, live ticker strip, dockable panels, status bar, alerts and watchdogs.
+"""Main window: command bar, live ticker strip, a sidebar that shows one screen at a time, status bar,
+alerts and watchdogs.
 
 Threading model (nothing slow runs on the UI thread):
   * UI thread        painting + cheap overlays of live ticks on precomputed frames
@@ -15,10 +16,11 @@ import time
 from datetime import datetime
 
 import psutil
-from PySide6.QtCore import QByteArray, QSettings, QStringListModel, Qt, QTimer, Signal, QObject
+from PySide6.QtCore import QByteArray, QObject, QSettings, QSize, QStringListModel, Qt, QTimer, Signal
 from PySide6.QtGui import QAction, QKeySequence, QPainter, QTextDocument
-from PySide6.QtWidgets import (QCompleter, QDockWidget, QLabel, QLineEdit, QListWidget, QMainWindow, QMessageBox,
-                               QProgressBar, QPushButton, QSizePolicy, QToolBar, QVBoxLayout, QWidget)
+from PySide6.QtWidgets import (QCompleter, QHBoxLayout, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMainWindow,
+                               QMessageBox, QProgressBar, QPushButton, QSizePolicy, QStackedWidget, QToolBar,
+                               QWidget)
 
 from .. import watchlist as wl
 from ..livefeed import IST, Feed, market_open
@@ -105,12 +107,23 @@ class AlertsPanel(Panel):
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
         lay = vbox(self)
+        lay.addWidget(QLabel("Watchlist alerts appear here (newest first) and as Windows notifications: price at your "
+                             "buy/sell target, a ±3% day move, a news-sentiment flip, results within 7 days, or a stock "
+                             "entering/leaving tomorrow's top list. Each alert fires once per day. Double-click one to "
+                             "open the stock."))
+        lay.itemAt(0).widget().setWordWrap(True)
+        lay.itemAt(0).widget().setObjectName("muted")
         self.list = QListWidget()
+        self.empty = QListWidgetItem("No alerts yet today. Add stocks to your Watchlist (with optional buy/sell targets) "
+                                     "to get alerts.")
+        self.list.addItem(self.empty)
         lay.addWidget(self.list)
         self.list.itemDoubleClicked.connect(lambda it: it.data(Qt.UserRole) and self.stock_selected.emit(it.data(Qt.UserRole)))
 
     def add(self, ticker: str, text: str) -> None:
-        from PySide6.QtWidgets import QListWidgetItem
+        if self.empty is not None:
+            self.list.takeItem(self.list.row(self.empty))
+            self.empty = None
         it = QListWidgetItem(f"{datetime.now(IST):%H:%M:%S}  {ticker.replace('.NS', ''):<12} {text}")
         it.setData(Qt.UserRole, ticker if ticker.endswith(".NS") else None)
         self.list.insertItem(0, it)
@@ -120,6 +133,9 @@ class AlertsPanel(Panel):
 
 PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
           AlertsPanel]
+# Sidebar order: (code, label). Ctrl+1 … Ctrl+0 jump to these in order.
+NAV = [("MKT", "Market"), ("TODAY", "Today"), ("SCRN", "Screener"), ("WATCH", "Watchlist"), ("DES", "Stock"),
+       ("RANK", "Rankers"), ("LAB", "Backtest lab"), ("RISK", "Risk"), ("PLAN", "RL & plan"), ("ALRT", "Alerts")]
 
 
 class MainWindow(QMainWindow):
@@ -129,11 +145,9 @@ class MainWindow(QMainWindow):
         self.start_feed = start_feed
         self.setWindowTitle("NiveshRL · trading desk")
         self.resize(1600, 960)
-        self.setDockNestingEnabled(True)
-        self.setDockOptions(QMainWindow.AnimatedDocks | QMainWindow.AllowTabbedDocks | QMainWindow.AllowNestedDocks)
         self.settings = QSettings(os.path.join(APPDATA, "layout.ini"), QSettings.IniFormat)
         self.panels: dict[str, Panel] = {}
-        self.docks: dict[str, QDockWidget] = {}
+        self.history: list[str] = []                 # pages visited, for Back (Alt+Left)
         self.base: MarketBase | None = None
         self._ticks_prev = (time.time(), 0)
         self._alerted: set[tuple[str, str, str]] = set()
@@ -146,7 +160,7 @@ class MainWindow(QMainWindow):
         tb2.addWidget(self.strip)
         self.addToolBarBreak()
         self.addToolBar(Qt.TopToolBarArea, tb2)
-        self._build_docks()
+        self._build_pages()
         self._build_status()
         self._wire()
         self.loading = QLabel("Loading NIFTY 200 panel…")
@@ -160,6 +174,11 @@ class MainWindow(QMainWindow):
         tb.setObjectName("command")
         logo = QLabel(f"<b style='color:{theme.AMBER}'>NIVESH</b><b>RL</b> ")
         tb.addWidget(logo)
+        self.back_btn = QPushButton("← Back")
+        self.back_btn.setToolTip("Previous screen (Alt+Left)")
+        self.back_btn.clicked.connect(self.go_back)
+        self.back_btn.setEnabled(False)
+        tb.addWidget(self.back_btn)
         self.cmd = QLineEdit()
         self.cmd.setPlaceholderText("Command: RELIANCE <Enter> · MKT · TODAY · SCRN · WATCH · LAB · RANK · RISK · PLAN · ALRT · HELP   (Ctrl+K)")
         self.cmd.setMinimumWidth(520)
@@ -178,16 +197,15 @@ class MainWindow(QMainWindow):
         self.prog.setVisible(False)
         tb.addWidget(self.prog)
         self.addToolBar(Qt.TopToolBarArea, tb)
-        for key, fn in [("Ctrl+K", lambda: (self.cmd.setFocus(), self.cmd.selectAll())), ("F5", self.run_pipeline)]:
+        keys = [("Ctrl+K", lambda: (self.cmd.setFocus(), self.cmd.selectAll())), ("F5", self.run_pipeline),
+                ("Alt+Left", self.go_back)]
+        keys += [(f"Ctrl+{(i + 1) % 10}", lambda c=c: self.show_panel(c)) for i, (c, _) in enumerate(NAV)]
+        for key, fn in keys:
             a = QAction(self)
             a.setShortcut(QKeySequence(key))
             a.triggered.connect(fn)
             self.addAction(a)
-        view = self.menuBar().addMenu("&View")
-        self.view_menu = view
-        reset = QAction("Reset layout", self)
-        reset.triggered.connect(self.reset_layout)
-        view.addAction(reset)
+        self.view_menu = self.menuBar().addMenu("&Go")
         opts = self.menuBar().addMenu("&Options")
         self.auto_act = QAction("Run daily pipeline automatically at 16:00 (Mon–Fri)", self, checkable=True)
         self.auto_act.setChecked(self.ctx.scheduler.enabled)
@@ -202,51 +220,43 @@ class MainWindow(QMainWindow):
         about.triggered.connect(self._about)
         helpm.addAction(about)
 
-    def _build_docks(self) -> None:
+    def _build_pages(self) -> None:
+        """Sidebar on the left; the selected screen fills the rest of the window (one screen at a time)."""
         self.stock = StockPanel(self.ctx)
         for cls in PANELS:
-            p = cls(self.ctx)
-            self.panels[p.code] = p
+            pnl = cls(self.ctx)
+            self.panels[pnl.code] = pnl
         self.panels[self.stock.code] = self.stock
-        for code, p in self.panels.items():
-            d = QDockWidget(f"{p.title}  ·  {code}", self)
-            d.setObjectName(f"dock_{code}")
-            d.setWidget(p)
-            d.setFeatures(QDockWidget.DockWidgetMovable | QDockWidget.DockWidgetFloatable | QDockWidget.DockWidgetClosable)
-            d.visibilityChanged.connect(lambda vis, p=p: vis and self.base is not None and p.ensure_loaded())
-            self.docks[code] = d
-            self.view_menu.addAction(d.toggleViewAction())
-            p.stock_selected.connect(self.open_stock)
-        self.default_layout()
-        self._default_state = self.saveState()
-        state = self.settings.value("state")
+        self.nav = QListWidget()
+        self.nav.setObjectName("nav")
+        self.nav.setFixedWidth(170)
+        self.nav.setIconSize(QSize(0, 0))
+        self.pages = QStackedWidget()
+        self.page_index: dict[str, int] = {}
+        for i, (code, label) in enumerate(NAV):
+            it = QListWidgetItem(f"{label}")
+            it.setData(Qt.UserRole, code)
+            it.setToolTip(f"{label}  ·  {code}  ·  Ctrl+{(i + 1) % 10}")
+            self.nav.addItem(it)
+            self.page_index[code] = self.pages.addWidget(self.panels[code])
+            act = QAction(f"{label}\t{code}", self)
+            act.triggered.connect(lambda _=False, c=code: self.show_panel(c))
+            self.view_menu.addAction(act)
+            self.panels[code].stock_selected.connect(self.open_stock)
+        self.nav.currentRowChanged.connect(lambda r: r >= 0 and self.show_panel(NAV[r][0]))
+        central = QWidget()
+        lay = QHBoxLayout(central)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(0)
+        lay.addWidget(self.nav)
+        lay.addWidget(self.pages, 1)
+        self.setCentralWidget(central)
         geo = self.settings.value("geometry")
         if isinstance(geo, QByteArray):
             self.restoreGeometry(geo)
-        if isinstance(state, QByteArray):
-            self.restoreState(state)
-
-    def default_layout(self) -> None:
-        d = self.docks
-        self.addDockWidget(Qt.LeftDockWidgetArea, d["MKT"])
-        for c in ["TODAY", "SCRN", "LAB", "RANK", "RISK", "PLAN"]:
-            self.tabifyDockWidget(d["MKT"], d[c])
-        self.addDockWidget(Qt.RightDockWidgetArea, d["DES"])
-        self.addDockWidget(Qt.RightDockWidgetArea, d["WATCH"])
-        self.tabifyDockWidget(d["WATCH"], d["ALRT"])
-        self.splitDockWidget(d["DES"], d["WATCH"], Qt.Vertical)
-        for dk in d.values():
-            dk.show()
-        d["MKT"].raise_()
-        d["WATCH"].raise_()
-        self.resizeDocks([d["MKT"], d["DES"]], [900, 700], Qt.Horizontal)
-        self.resizeDocks([d["DES"], d["WATCH"]], [700, 240], Qt.Vertical)
-
-    def reset_layout(self) -> None:
-        for dk in self.docks.values():
-            dk.setFloating(False)
-            dk.show()
-        self.restoreState(self._default_state)
+        start = self.settings.value("page", "MKT")
+        self.current = None
+        self.show_panel(start if start in self.panels and start != "DES" else "MKT", record=False)
 
     def _build_status(self) -> None:
         sb = self.statusBar()
@@ -291,9 +301,7 @@ class MainWindow(QMainWindow):
         self.completer.setModel(QStringListModel(codes + names, self.completer))
         if self.start_feed:
             self._start_feed()
-        for code, d in self.docks.items():
-            if d.isVisible() and not d.visibleRegion().isEmpty():
-                self.panels[code].ensure_loaded()
+        self.panels[self.current].ensure_loaded()
         self._refresh_strip()
         self.t_tick.start()
         self.t_alerts.start()
@@ -318,15 +326,32 @@ class MainWindow(QMainWindow):
             return
         self.stock._loaded = True
         self.stock.show_stock(ticker)
-        self.docks["DES"].show()
-        self.docks["DES"].raise_()
+        self.show_panel("DES")
 
-    def show_panel(self, code: str) -> None:
-        d = self.docks.get(code)
-        if d:
-            d.show()
-            d.raise_()
+    def show_panel(self, code: str, record: bool = True) -> None:
+        """Show one screen; everything else is hidden (and stops refreshing)."""
+        if code not in self.page_index:
+            return
+        if record and self.current and self.current != code:
+            self.history.append(self.current)
+            self.history = self.history[-50:]
+        self.current = code
+        self.pages.setCurrentIndex(self.page_index[code])
+        row = [c for c, _ in NAV].index(code)
+        if self.nav.currentRow() != row:
+            self.nav.blockSignals(True)
+            self.nav.setCurrentRow(row)
+            self.nav.blockSignals(False)
+        self.back_btn.setEnabled(bool(self.history))
+        if self.base is not None:
             self.panels[code].ensure_loaded()
+            self.panels[code].on_tick()
+
+    def go_back(self) -> None:
+        if not self.history:
+            return
+        self.show_panel(self.history.pop(), record=False)
+        self.back_btn.setEnabled(bool(self.history))
 
     def _command(self) -> None:
         txt = self.cmd.text().strip()
@@ -353,9 +378,8 @@ class MainWindow(QMainWindow):
 
     # ------------------------------------------------------------------ timers
     def _visible_panels(self):
-        for code, d in self.docks.items():
-            if d.isVisible() and not d.visibleRegion().isEmpty():
-                yield self.panels[code]
+        if self.current and self.isVisible():
+            yield self.panels[self.current]
 
     def _tick(self) -> None:
         t0 = time.perf_counter()
@@ -497,13 +521,15 @@ class MainWindow(QMainWindow):
         QMessageBox.information(self, "NiveshRL", (
             "NiveshRL trading desk\n\n"
             "Commands (Ctrl+K): type a symbol (RELIANCE) or a screen code: MKT, TODAY, SCRN, WATCH, LAB, RANK, RISK, "
-            "PLAN, ALRT, DES.\nF5 runs the daily pipeline (prices, fundamentals, news + FinBERT, next-day model, "
-            "briefing). Panels can be dragged, tabbed, floated and closed; View → Reset layout restores them.\n\n"
+            "PLAN, ALRT, DES.\nPick a screen in the left menu (or Ctrl+1 … Ctrl+0); Alt+Left goes back.\n"
+            "Charts: mouse wheel zooms time, drag pans, the range buttons (1M … All) jump, double-click resets.\n"
+            "F5 runs the daily pipeline (prices, fundamentals, news + FinBERT, next-day model, briefing).\n\n"
             "Educational project, not investment advice. Not registered with SEBI."))
 
     def save_layout(self) -> None:
-        self.settings.setValue("state", self.saveState())
         self.settings.setValue("geometry", self.saveGeometry())
+        if self.current:
+            self.settings.setValue("page", self.current)
         self.settings.sync()
 
     def shutdown(self) -> None:

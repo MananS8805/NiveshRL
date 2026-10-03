@@ -11,7 +11,8 @@ from PySide6.QtCore import (QAbstractTableModel, QEvent, QModelIndex, QObject, Q
                             QThreadPool, Signal)
 from PySide6.QtGui import QBrush, QColor, QFont, QPen
 from PySide6.QtWidgets import (QFrame, QGraphicsRectItem, QGraphicsScene, QGraphicsSimpleTextItem, QGraphicsView,
-                               QGridLayout, QHeaderView, QLabel, QTableView, QToolTip, QVBoxLayout, QWidget)
+                               QGridLayout, QHBoxLayout, QHeaderView, QLabel, QPushButton, QTableView, QToolTip,
+                               QVBoxLayout, QWidget)
 
 from . import theme
 
@@ -158,6 +159,10 @@ class FrameTable(QTableView):
         self.proxy.setSourceModel(self.model_)
         self.setModel(self.proxy)
         self.setSortingEnabled(True)
+        # Enabling sorting sorts by column 0 descending by default, which silently reorders ranked lists
+        # (rank 194 first, orders shuffled). Start unsorted: show rows in the order given until a header is clicked.
+        self.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)
+        self.proxy.sort(-1)
         self.setAlternatingRowColors(True)
         self.setSelectionBehavior(QTableView.SelectRows)
         self.setSelectionMode(QTableView.SingleSelection)
@@ -171,7 +176,13 @@ class FrameTable(QTableView):
             self.model_.update_cells(df)
         else:
             self.model_.set_frame(df)
+            if self.horizontalHeader().sortIndicatorSection() >= df.shape[1]:
+                self.horizontalHeader().setSortIndicator(-1, Qt.AscendingOrder)   # new frame, fewer columns
+                self.proxy.sort(-1)
             self.resizeColumnsToContents()
+            for i in range(df.shape[1]):                     # very long text columns shouldn't push others off-screen
+                if self.columnWidth(i) > 420:
+                    self.setColumnWidth(i, 420)
 
     def _clicked(self, idx):
         src = self.proxy.mapToSource(idx)
@@ -414,28 +425,118 @@ class CandleItem(pg.GraphicsObject):
         return QRectF(self.picture.boundingRect())
 
 
-class PriceChart(pg.GraphicsLayoutWidget):
-    """Candles + moving averages + volume + RSI panes with a shared, zoomable x-axis and crosshair."""
+RANGES = [("1M", pd.DateOffset(months=1)), ("3M", pd.DateOffset(months=3)), ("6M", pd.DateOffset(months=6)),
+          ("1Y", pd.DateOffset(years=1)), ("3Y", pd.DateOffset(years=3)), ("5Y", pd.DateOffset(years=5)),
+          ("All", None)]
+HINT = "wheel: zoom time · drag: pan · double-click: reset"
 
-    def __init__(self, parent=None):
+
+class ChartFrame(QWidget):
+    """A chart with a range bar (1M … All), a value readout and consistent, simple navigation:
+    the mouse wheel zooms the time axis only, dragging pans along time, the y-axis always fits
+    what is visible, and a double-click returns to the default window."""
+
+    def __init__(self, parent=None, default: str = "1Y"):
         super().__init__(parent)
-        self.setBackground(theme.BG)
+        self.default = default
+        lay = QVBoxLayout(self)
+        lay.setContentsMargins(0, 0, 0, 0)
+        lay.setSpacing(2)
+        bar = QHBoxLayout()
+        bar.setSpacing(4)
+        self.title = QLabel("")
+        self.title.setStyleSheet(f"color:{theme.AMBER};font-weight:600;")
+        bar.addWidget(self.title)
+        bar.addStretch(1)
+        self.buttons: dict[str, QPushButton] = {}
+        for name, _ in RANGES:
+            b = QPushButton(name)
+            b.setCheckable(True)
+            b.setFixedWidth(44)
+            b.setStyleSheet("QPushButton{padding:2px 4px;} QPushButton:checked{color:%s;border-color:%s;}"
+                            % (theme.AMBER, theme.AMBER))
+            b.clicked.connect(lambda _=False, n=name: self.set_range(n))
+            self.buttons[name] = b
+            bar.addWidget(b)
+        lay.addLayout(bar)
+        self.readout = QLabel(HINT)
+        self.readout.setStyleSheet(f"color:{theme.MUTED};font-size:11px;")
+        lay.addWidget(self.readout)
+        self.glw = pg.GraphicsLayoutWidget()
+        self.glw.setBackground(theme.BG)
+        lay.addWidget(self.glw, 1)
+        self.dates: list = []
+        self.plots: list = []
+        self._handlers: list = []
+
+    # -- plumbing shared by every chart ------------------------------------------------
+    def _reset_scene(self) -> None:
+        sc = self.glw.scene()
+        for sig, fn in self._handlers:                   # drop handlers that hold the previous data
+            try:
+                getattr(sc, sig).disconnect(fn)
+            except (RuntimeError, TypeError):
+                pass
+        self._handlers = []
+        self.glw.clear()
+        self.plots = []
+
+    def _connect(self, sig: str, fn) -> None:
+        getattr(self.glw.scene(), sig).connect(fn)
+        self._handlers.append((sig, fn))
+
+    def _setup_nav(self, plots: list) -> None:
+        n = len(self.dates)
+        self.plots = plots
+        for p in plots:
+            vb = p.getViewBox()
+            vb.setMouseEnabled(x=True, y=False)          # zoom/pan along time only
+            vb.setLimits(xMin=-2, xMax=n + 2, minXRange=min(10, max(n - 1, 1)))
+            p.setAutoVisible(y=True)                     # y fits what is on screen
+            p.enableAutoRange(axis="y")
+            p.getAxis("left").setWidth(60)
+            p.setMenuEnabled(False)
+        for p in plots[1:]:
+            p.setXLink(plots[0])
+
+        def clicked(ev):
+            if ev.double():
+                self.set_range(self.default)
+        self._connect("sigMouseClicked", clicked)
+        self.set_range(self.default)
+
+    def set_range(self, name: str) -> None:
+        for k, b in self.buttons.items():
+            b.setChecked(k == name)
+        if not self.plots or not self.dates:
+            return
+        n = len(self.dates)
+        off = dict(RANGES).get(name)
+        lo = 0
+        if off is not None:
+            start = pd.Timestamp(self.dates[-1]) - off
+            lo = int(np.searchsorted(pd.DatetimeIndex(self.dates).values, np.datetime64(start)))
+        self.plots[0].setXRange(max(0, lo) - 0.5, n - 0.5, padding=0.01)
+        for p in self.plots:
+            if p.getViewBox().state["autoVisibleOnly"][1]:
+                p.enableAutoRange(axis="y")
+
+
+class PriceChart(ChartFrame):
+    """Candles + SMA50/200 + volume + RSI(14), one shared time axis."""
 
     def plot(self, df: pd.DataFrame, title: str = "") -> None:
         """df: Open/High/Low/Close/Volume indexed by date."""
-        if getattr(self, "_moved", None) is not None:     # drop the previous stock's crosshair handler
-            try:                                          # (it holds that stock's frame: a leak otherwise)
-                self.scene().sigMouseMoved.disconnect(self._moved)
-            except (RuntimeError, TypeError):
-                pass
-            self._moved = None
-        self.clear()
+        self._reset_scene()
         df = df.dropna(subset=["Close"])
+        self.title.setText(title)
         if df.empty:
             return
-        dates = list(df.index)
+        self.dates = list(df.index)
+        dates = self.dates
         x = np.arange(len(df))
-        p1 = self.addPlot(row=0, col=0, title=title)
+        g = self.glw
+        p1 = g.addPlot(row=0, col=0)
         p1.hideAxis("bottom")
         p1.showGrid(x=True, y=True, alpha=0.15)
         if df[["Open", "High", "Low"]].notna().all().all():
@@ -444,14 +545,13 @@ class PriceChart(pg.GraphicsLayoutWidget):
             p1.plot(x, df["Close"].to_numpy(), pen=pg.mkPen(theme.AMBER, width=1.5))
         for n, col in [(50, theme.BLUE), (200, "#C77DFF")]:
             p1.plot(x, df["Close"].rolling(n).mean().to_numpy(), pen=pg.mkPen(col, width=1, style=Qt.DashLine))
-        p2 = self.addPlot(row=1, col=0)
+        p2 = g.addPlot(row=1, col=0)
         p2.hideAxis("bottom")
-        p2.setXLink(p1)
-        p2.setMaximumHeight(90)
+        p2.setMaximumHeight(80)
+        p2.getAxis("left").setStyle(showValues=False)        # volume: bars only, the readout shows the number
         vol = df["Volume"].fillna(0).to_numpy() if "Volume" in df else np.zeros(len(df))
         p2.addItem(pg.BarGraphItem(x=x, height=vol, width=0.7, brush=pg.mkBrush("#2A3442")))
-        p3 = self.addPlot(row=2, col=0, axisItems={"bottom": _DateAxis(dates)})
-        p3.setXLink(p1)
+        p3 = g.addPlot(row=2, col=0, axisItems={"bottom": _DateAxis(dates)})
         p3.setMaximumHeight(90)
         d = df["Close"].diff()
         up = d.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
@@ -460,44 +560,89 @@ class PriceChart(pg.GraphicsLayoutWidget):
         p3.plot(x, rsi.to_numpy(), pen=pg.mkPen(theme.AMBER, width=1))
         for lvl in (30, 70):
             p3.addItem(pg.InfiniteLine(lvl, angle=0, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine)))
-        p3.setYRange(0, 100)
-        vline = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine))
-        p1.addItem(vline, ignoreBounds=True)
-        label = pg.TextItem(color=theme.TEXT, anchor=(0, 0))
-        p1.addItem(label, ignoreBounds=True)
+        lines = [pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine)) for _ in range(3)]
+        for p, ln in zip((p1, p2, p3), lines):
+            p.addItem(ln, ignoreBounds=True)
+        o, h, l, c = (df[k].to_numpy() if k in df else np.full(len(df), np.nan) for k in ("Open", "High", "Low", "Close"))
+        sma50 = df["Close"].rolling(50).mean().to_numpy()
+        rsi_v = rsi.to_numpy()
 
         def moved(pos):
-            if p1.sceneBoundingRect().contains(pos):
-                i = int(round(p1.vb.mapSceneToView(pos).x()))
-                if 0 <= i < len(df):
-                    r = df.iloc[i]
-                    vline.setPos(i)
-                    label.setText(f"{dates[i]:%d %b %Y}  O {r.get('Open', np.nan):,.1f}  H {r.get('High', np.nan):,.1f}  "
-                                  f"L {r.get('Low', np.nan):,.1f}  C {r['Close']:,.1f}")
-                    label.setPos(p1.vb.viewRange()[0][0], p1.vb.viewRange()[1][1])
-        self.scene().sigMouseMoved.connect(moved)
-        self._moved = moved
-        for p in (p1, p2):
-            p.setAutoVisible(y=True)                     # y-range follows the visible window when zooming
-            p.enableAutoRange(axis="y")
+            for p in (p1, p2, p3):
+                if p.sceneBoundingRect().contains(pos):
+                    i = int(round(p.vb.mapSceneToView(pos).x()))
+                    if 0 <= i < len(dates):
+                        for ln in lines:
+                            ln.setPos(i)
+                        chg = c[i] / c[i - 1] - 1 if i > 0 else np.nan
+                        self.readout.setText(
+                            f"<span style='color:{theme.TEXT}'>{dates[i]:%a %d %b %Y}</span> &nbsp; O {o[i]:,.2f} &nbsp; "
+                            f"H {h[i]:,.2f} &nbsp; L {l[i]:,.2f} &nbsp; C <b>{c[i]:,.2f}</b> "
+                            f"<span style='color:{theme.signed(chg)}'>{chg:+.2%}</span> &nbsp; Vol {vol[i]:,.0f} &nbsp; "
+                            f"SMA50 {sma50[i]:,.1f} &nbsp; RSI {rsi_v[i]:.0f} &nbsp;&nbsp; "
+                            f"<span style='color:{theme.MUTED}'>{HINT}</span>")
+                    return
+        self._connect("sigMouseMoved", moved)
+        lo_all = np.where(np.isfinite(l), l, c)
+        hi_all = np.where(np.isfinite(h), h, c)
+
+        def fit_y(*_):
+            (x0, x1), _ = p1.vb.viewRange()
+            a, b = max(0, int(np.floor(x0))), min(len(c), int(np.ceil(x1)) + 1)
+            if b - a < 2:
+                return
+            lo, hi = np.nanmin(lo_all[a:b]), np.nanmax(hi_all[a:b])
+            if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
+                pad = (hi - lo) * 0.06
+                p1.setYRange(lo - pad, hi + pad, padding=0)
+            vmax = np.nanmax(vol[a:b]) if b > a else 0
+            p2.setYRange(0, max(vmax, 1) * 1.05, padding=0)
+        self._setup_nav([p1, p2, p3])
         for p in (p1, p2, p3):
-            p.getAxis("left").setWidth(56)
-        p1.setXRange(max(0, len(df) - 250), len(df), padding=0.01)
+            p.disableAutoRange(axis="y")
+            p.setAutoVisible(y=False)
+        p3.setYRange(0, 100, padding=0)
+        p1.sigXRangeChanged.connect(fit_y)
+        fit_y()
 
 
-def line_chart(series: dict[str, pd.Series], title: str = "", logy: bool = False) -> pg.PlotWidget:
-    """Several date-indexed series on one date axis (aligned by position on the first series' index)."""
-    first = next(iter(series.values()))
-    dates = list(first.index)
-    w = pg.PlotWidget(axisItems={"bottom": _DateAxis(dates)}, title=title)
-    w.showGrid(x=True, y=True, alpha=0.15)
-    w.addLegend(offset=(10, 10))
-    if logy:
-        w.setLogMode(y=True)
-    for i, (name, s) in enumerate(series.items()):
-        s = s.reindex(first.index)
-        w.plot(np.arange(len(s)), s.to_numpy(), pen=pg.mkPen(theme.SERIES[i % len(theme.SERIES)], width=1.6), name=name)
-    return w
+class LineChart(ChartFrame):
+    """Several date-indexed series on one time axis (aligned to the first series' dates)."""
+
+    def __init__(self, series: dict, title: str = "", logy: bool = False, default: str = "All", parent=None):
+        super().__init__(parent, default=default)
+        self._reset_scene()
+        self.title.setText(title)
+        first = next(iter(series.values()))
+        self.dates = list(first.index)
+        dates = self.dates
+        p = self.glw.addPlot(row=0, col=0, axisItems={"bottom": _DateAxis(dates)})
+        p.showGrid(x=True, y=True, alpha=0.15)
+        p.addLegend(offset=(10, 10))
+        if logy:
+            p.setLogMode(y=True)
+        vals = {}
+        for i, (name, s) in enumerate(series.items()):
+            v = s.reindex(first.index).to_numpy(dtype=float)
+            vals[name] = (v, theme.SERIES[i % len(theme.SERIES)])
+            p.plot(np.arange(len(v)), v, pen=pg.mkPen(theme.SERIES[i % len(theme.SERIES)], width=1.6), name=name)
+        ln = pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine))
+        p.addItem(ln, ignoreBounds=True)
+
+        def moved(pos):
+            if p.sceneBoundingRect().contains(pos):
+                i = int(round(p.vb.mapSceneToView(pos).x()))
+                if 0 <= i < len(dates):
+                    ln.setPos(i)
+                    parts = [f"<span style='color:{col}'>{name[:28]}</span> {v[i]:,.3f}" for name, (v, col) in vals.items()]
+                    self.readout.setText(f"<span style='color:{theme.TEXT}'>{pd.Timestamp(dates[i]):%d %b %Y}</span>"
+                                         f" &nbsp; " + " &nbsp; ".join(parts))
+        self._connect("sigMouseMoved", moved)
+        self._setup_nav([p])
+
+
+def line_chart(series: dict[str, pd.Series], title: str = "", logy: bool = False) -> LineChart:
+    return LineChart(series, title, logy)
 
 
 def h1(text: str) -> QLabel:

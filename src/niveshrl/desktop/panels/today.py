@@ -4,13 +4,13 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 import pyqtgraph as pg
-from PySide6.QtCore import Qt
-from PySide6.QtWidgets import QGridLayout, QSpinBox, QHBoxLayout, QTextBrowser, QVBoxLayout, QWidget
+from PySide6.QtWidgets import (QGridLayout, QHBoxLayout, QSpinBox, QTabWidget, QTextBrowser, QVBoxLayout,
+                               QWidget)
 
 from ... import watchlist as wl
 from .. import data, theme
 from ..widgets import FrameTable, KpiRow, h2, muted
-from . import Panel, scrolling, vbox
+from . import Panel, vbox
 
 
 class TodayPanel(Panel):
@@ -19,40 +19,46 @@ class TodayPanel(Panel):
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
-        outer = vbox(self, 0)
-        inner = QWidget()
-        outer.addWidget(scrolling(inner))
-        lay = vbox(inner)
+        lay = vbox(self)
         self.kpis = KpiRow(cols=8)
         lay.addWidget(self.kpis)
-        grid = QGridLayout()
-        lay.addLayout(grid)
+        self.tabs = QTabWidget()
+        lay.addWidget(self.tabs, 1)
+
+        # --- tab 1: briefing
+        brief = QWidget()
+        grid = QGridLayout(brief)
         left = QVBoxLayout()
         left.addWidget(h2("What happened"))
         self.story = QTextBrowser()
-        self.story.setMinimumHeight(170)
+        self.story.setMaximumHeight(210)
         left.addWidget(self.story)
         left.addWidget(h2("Your watchlist today"))
         self.mine = FrameTable(fmt={"1D": "{:+.2%}", "P(up)": "{:.0%}", "Sentiment": "{:+.2f}", "Analyst": "{:.0f}"},
                                signed={"1D", "Sentiment"})
-        self.mine.setMinimumHeight(140)
         self.mine.row_clicked.connect(lambda t: self.stock_selected.emit(str(t)))
-        left.addWidget(self.mine)
+        left.addWidget(self.mine, 1)
         grid.addLayout(left, 0, 0)
         right = QVBoxLayout()
         right.addWidget(h2("Best and worst sectors (1D %)"))
         self.sectors = pg.PlotWidget()
-        self.sectors.setMinimumHeight(260)
-        right.addWidget(self.sectors)
+        self.sectors.setMouseEnabled(x=False, y=False)
+        self.sectors.setMenuEnabled(False)
+        right.addWidget(self.sectors, 2)
         right.addWidget(h2("Results this week"))
         self.earn = FrameTable()
-        self.earn.setMinimumHeight(110)
         self.earn.row_clicked.connect(lambda t: self.stock_selected.emit(str(t)))
-        right.addWidget(self.earn)
+        right.addWidget(self.earn, 1)
         grid.addLayout(right, 0, 1)
         grid.setColumnStretch(0, 3)
         grid.setColumnStretch(1, 2)
+        self.stamp = muted("")
+        grid.addWidget(self.stamp, 1, 0, 1, 2)
+        self.tabs.addTab(brief, "Briefing")
 
+        # --- tab 2: top stocks to monitor tomorrow
+        watch = QWidget()
+        wl_ = vbox(watch)
         hrow = QHBoxLayout()
         hrow.addWidget(h2("Top stocks to monitor tomorrow"))
         hrow.addStretch(1)
@@ -62,33 +68,37 @@ class TodayPanel(Panel):
         self.n.setValue(10)
         self.n.valueChanged.connect(self.refresh)
         hrow.addWidget(self.n)
-        lay.addLayout(hrow)
+        wl_.addLayout(hrow)
         self.warn = QTextBrowser()
         self.warn.setMaximumHeight(62)
-        lay.addWidget(self.warn)
+        wl_.addWidget(self.warn)
         mon = QHBoxLayout()
         self.lists = {}
         for name in ("watch for strength", "watch for weakness"):
             box = QVBoxLayout()
             box.addWidget(h2(name.capitalize()))
             t = FrameTable(fmt={"Score": "{:+.2f}", "P(up)": "{:.0%}"}, signed={"Score"})
-            t.setMinimumHeight(300)
             t.row_clicked.connect(lambda tk: self.stock_selected.emit(str(tk)))
-            box.addWidget(t)
+            box.addWidget(t, 1)
             self.lists[name] = t
             mon.addLayout(box)
-        lay.addLayout(mon)
-        lay.addWidget(h2("Market habits (NIFTY, measured)"))
+        wl_.addLayout(mon, 1)
+        wl_.addWidget(muted("Click a stock to open its chart, news and technicals."))
+        self.tabs.addTab(watch, "Watch tomorrow")
+
+        # --- tab 3: market habits
+        habw = QWidget()
+        hl = vbox(habw)
+        hl.addWidget(h2("Market habits (NIFTY, measured from history, not opinions)"))
         hab = QHBoxLayout()
         self.dow = FrameTable(fmt={"mean": "{:+.3%}", "hit": "{:.0%}", "n": "{:.0f}"}, signed={"mean"})
-        self.dow.setMinimumHeight(180)
         self.habits = QTextBrowser()
         self.intraday = QTextBrowser()
         for w in (self.dow, self.habits, self.intraday):
             hab.addWidget(w)
-        lay.addLayout(hab)
-        self.stamp = muted("")
-        lay.addWidget(self.stamp)
+        hl.addLayout(hab, 1)
+        hl.addWidget(muted("Day of week: mean NIFTY return and share of up days (hit). Use as context, not as a signal."))
+        self.tabs.addTab(habw, "Market habits")
 
     def refresh(self) -> None:
         b, mon, hab = data.dload("briefing"), data.dload("monitor"), data.dload("habits")

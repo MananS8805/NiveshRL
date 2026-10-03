@@ -38,9 +38,9 @@ class SyntheticFeed:
             def _run(self):
                 from niveshrl.desktop import data
                 last = data.panel().close.ffill().iloc[-1]
-                px = {s: float(last.get(s, 100.0)) for s in self.symbols}
-                px.setdefault("^NSEI", 22_000.0)
-                px.setdefault("^INDIAVIX", 14.0)
+                p = data.panel()
+                start = {"^NSEI": float(p.bench.dropna().iloc[-1]), "^INDIAVIX": float(p.vix.dropna().iloc[-1])}
+                px = {s: float(start.get(s, last.get(s, 100.0))) for s in self.symbols}
                 base = dict(px)
                 vol = {s: 0.0 for s in self.symbols}
                 self.connected = True

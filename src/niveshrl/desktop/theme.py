@@ -51,6 +51,10 @@ QMenuBar {{ background: {PANEL}; border-bottom: 1px solid {GRID}; }}
 QMenuBar::item {{ background: transparent; color: {TEXT}; padding: 4px 10px; }}
 QMenuBar::item:selected {{ background: #2A2010; color: {AMBER}; }}
 QToolBar {{ background: {BG}; border: none; spacing: 6px; padding: 2px 4px; }}
+QListWidget#nav {{ background: {PANEL}; border: none; border-right: 1px solid {GRID}; padding-top: 8px; outline: 0; }}
+QListWidget#nav::item {{ color: {MUTED}; padding: 11px 16px; border-left: 3px solid transparent; font-size: 13px; }}
+QListWidget#nav::item:hover {{ color: {TEXT}; background: #161C25; }}
+QListWidget#nav::item:selected {{ color: {AMBER}; background: #1A1610; border-left: 3px solid {AMBER}; }}
 QToolTip {{ background: {PANEL}; color: {TEXT}; border: 1px solid {AMBER}; }}
 """
 
