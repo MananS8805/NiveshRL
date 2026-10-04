@@ -110,7 +110,59 @@ E("breadth", "Breadth (above 200-day average)", "Market",
          (0.80, "healthy", "most stocks in uptrends"),
          (INF, "very strong / stretched", "almost everything is rising; often late in a rally")],
   unit="pct", use="An index can rise on a few giants while most stocks fall; breadth tells you which it is.",
-  related=["adv_dec", "regime", "vs_sma"], aliases=["Breadth >200DMA", "breadth", "BREADTH >200DMA"])
+  related=["adv_dec", "regime", "vs_sma", "chart_breadth"], aliases=["Breadth >200DMA", "breadth", "BREADTH >200DMA", "% above 200-day"])
+E("global_markets", "Global markets & macro", "Market",
+  "World indices (US, Europe, Asia), Brent crude, gold, silver, the rupee (USD/INR), the dollar index and the US 10-year "
+  "Treasury yield, with their changes over 1 day to 1 year.",
+  how="Yahoo daily closes, refreshed every 30 minutes. Each market shows its own last close ('As of'): US markets close "
+      "after Indian markets, so their '1D' is usually the previous evening's move.",
+  reading="Indian stocks often open in the direction of the US close and Asian mornings. Rising crude and a weaker rupee "
+          "hurt India (a large oil importer; foreign investors lose on the currency); a rising US 10-year yield and a "
+          "stronger dollar tend to pull foreign money out of emerging markets.",
+  use="Context for the next open and for why the whole market moves on a day without Indian news.",
+  caveat="Relationships shift over time; see the correlation column for how tight each one actually was last year.",
+  related=["global_corr", "nifty", "india_vix"],
+  aliases=["S&P 500", "Nasdaq", "Dow Jones", "FTSE 100", "DAX", "Nikkei 225", "Hang Seng", "Shanghai", "Brent crude",
+           "Gold", "Silver", "USD/INR", "Dollar index", "US 10Y yield", "Market", "As of", "Global && macro"])
+E("global_corr", "Correlation with NIFTY (weekly, 1 year)", "Market",
+  "How closely each market's weekly returns moved with NIFTY's over the last 52 weeks, from −1 (opposite) to +1.",
+  how="Friday-to-Friday returns, so markets in different time zones line up.",
+  bands=[(-0.3, "moves against NIFTY", "e.g. crude, the dollar and USD/INR: up when Indian stocks fall"),
+         (0.3, "little relation", ""), (INF, "moves with NIFTY", "global risk appetite drives both")],
+  use="Tells you which overnight moves have actually mattered for Indian stocks recently.",
+  related=["global_markets", "corr_nifty"], aliases=["Corr. with NIFTY (weekly, 1y)"])
+E("chart_breadth", "Breadth history", "Charts",
+  "The share of NIFTY 200 stocks above their 50-day and 200-day averages, every day for 3 years.",
+  reading="Breadth turning up from very low levels (under ~20% above the 50-day) has often marked washed-out markets; "
+          "NIFTY making new highs while breadth falls (a divergence) means fewer stocks are carrying the index.",
+  caveat="Today's members only (stocks that left the index are missing), so older readings are slightly flattering.",
+  related=["breadth", "ad_line", "highs_lows"],
+  aliases=["% above 50-day", "Breadth 1 month ago", "Share of stocks above their 50- and 200-day averages (%)"])
+E("ad_line", "Advance-decline line", "Charts",
+  "The running total of (stocks up − stocks down) each day.",
+  reading="A rising line = most stocks are rising, a healthy, broad advance. An index rising while the A/D line falls "
+          "is a narrow rally led by a few large stocks.", related=["adv_dec", "chart_breadth"],
+  aliases=["A/D line", "A/D line, 1 month", "Advance-decline line (cumulative advancers − decliners)"])
+E("highs_lows", "New highs minus new lows", "Charts",
+  "Each day, how many stocks closed above their previous 52-week high minus how many closed below their 52-week low "
+  "(shown as a 5-day average next to NIFTY's change).",
+  reading="Expanding new highs confirm an uptrend; a market where lows outnumber highs is under broad pressure even if "
+          "the index holds up.", related=["new_52w", "chart_breadth"],
+  aliases=["New highs − lows", "Highs − lows", "New 52-week highs minus lows (5-day average) and NIFTY % change"])
+E("rrg", "Relative rotation graph (sector rotation)", "Market",
+  "Every NSE industry plotted by its relative trend against NIFTY (RS-Ratio, across) and whether that relative trend is "
+  "improving (RS-Momentum, up). Four quadrants: Leading (strong and strengthening), Weakening (strong but fading), "
+  "Lagging (weak and weakening) and Improving (weak but recovering).",
+  how="Weekly. RS = equal-weight industry index ÷ NIFTY; RS-Ratio = 100 × RS ÷ its 10-week average; RS-Momentum = 100 × "
+      "RS-Ratio ÷ its value 4 weeks earlier. Tails show the last 5 weeks.",
+  reading="Sectors tend to rotate clockwise. A sector moving from Improving into Leading is gaining leadership; one "
+          "sliding from Leading into Weakening is losing it. Long tails = fast rotation.",
+  use="Shows where money is rotating, to favour stocks in leading or improving sectors and question buys in lagging ones.",
+  caveat="An open approximation of the JdK RRG (the commercial formula is proprietary). Relative strength, not absolute: "
+         "a 'Leading' sector can still fall if the whole market falls. Not tested for edge in this app.",
+  related=["rs_line", "chart_sectors"],
+  aliases=["RS-Ratio", "RS-Momentum", "Quadrant", "4 weeks ago", "13-week return vs NIFTY", "Sector rotation",
+           "Sector rotation (relative rotation graph)"])
 E("adv_dec", "Advancers / decliners", "Market",
   "How many NIFTY 200 stocks rose vs fell today.",
   use="A quick read of participation: 150/44 is a broad rally, 51/143 broad selling, even if NIFTY moved little.",

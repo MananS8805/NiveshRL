@@ -1,14 +1,17 @@
-"""MKT: live market monitor: status tape, sector heatmap and movers for the NIFTY 200."""
+"""MKT: live market monitor (status tape, sector heatmap, movers), global markets & macro, breadth history and
+sector rotation (RRG) for the NIFTY 200."""
 from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSplitter, QVBoxLayout, QWidget
+import pyqtgraph as pg
+from PySide6.QtWidgets import QComboBox, QHBoxLayout, QLabel, QSplitter, QTabWidget, QVBoxLayout, QWidget
 from PySide6.QtCore import Qt
 
 from .. import data, theme
 from ...livefeed import INDEX_SYMBOLS
-from ..widgets import FrameTable, KpiRow, Treemap, h2, muted
+from ...research import marketdash as MD
+from ..widgets import ExplainButton, FrameTable, KpiRow, Treemap, h2, line_chart, muted, run_async
 from . import Panel, vbox
 
 WINDOWS = {"1D": 1, "1W": 5, "1M": 21, "3M": 63, "6M": 126, "1Y": 252}
@@ -60,7 +63,12 @@ class MarketPanel(Panel):
 
     def __init__(self, ctx, parent=None):
         super().__init__(ctx, parent)
-        lay = vbox(self)
+        outer = vbox(self, 0)
+        self.tabs = QTabWidget()
+        outer.addWidget(self.tabs)
+        live = QWidget()
+        lay = vbox(live)
+        self.tabs.addTab(live, "Live")
         self.kpis = KpiRow(cols=9)
         lay.addWidget(self.kpis)
         bar = QHBoxLayout()
@@ -96,6 +104,175 @@ class MarketPanel(Panel):
         lay.addWidget(split, 1)
         self.base: MarketBase | None = None
         self._sig = None
+        self._build_global()
+        self._build_breadth()
+        self._build_rrg()
+        self._done: set[int] = set()
+        self.tabs.currentChanged.connect(self._tab_changed)
+
+    # ------------------------------------------------------------------ extra tabs (built on first view)
+    def _build_global(self) -> None:
+        w = QWidget()
+        lay = vbox(w)
+        row = QHBoxLayout()
+        row.addWidget(h2("Global markets & macro", "global_markets"))
+        row.addStretch(1)
+        row.addWidget(ExplainButton("global_markets"))
+        lay.addLayout(row)
+        self.g_kpi = KpiRow(cols=7)
+        lay.addWidget(self.g_kpi)
+        pct = "{:+.2%}"
+        self.g_tab = FrameTable(fmt={"Last": "{:,.2f}", "1D": pct, "1W": pct, "1M": pct, "YTD": pct, "1Y": pct,
+                                     "Corr. with NIFTY (weekly, 1y)": "{:+.2f}"}, signed={"1D", "1W", "1M", "YTD", "1Y"})
+        self.g_tab.model_.term_overrides = {"Group": "global_markets", "Last": "global_markets", "As of": "global_markets",
+                                            "Corr. with NIFTY (weekly, 1y)": "global_corr"}
+        lay.addWidget(self.g_tab, 1)
+        self.g_note = muted("")
+        lay.addWidget(self.g_note)
+        self.tabs.addTab(w, "Global && macro")
+
+    def _build_breadth(self) -> None:
+        w = QWidget()
+        self.b_lay = vbox(w)
+        self.b_kpi = KpiRow(cols=6)
+        self.b_lay.addWidget(self.b_kpi)
+        self.b_lay.addWidget(muted("Breadth = how many stocks take part in a move. Today's NIFTY 200 members over the "
+                                   "last 3 years: stocks that left the index are missing, so older readings are a little "
+                                   "flattering."))
+        self.b_charts: list = []
+        self.tabs.addTab(w, "Breadth")
+
+    def _build_rrg(self) -> None:
+        w = QWidget()
+        lay = vbox(w)
+        row = QHBoxLayout()
+        row.addWidget(h2("Sector rotation (relative rotation graph)", "rrg"))
+        row.addStretch(1)
+        row.addWidget(ExplainButton("rrg"))
+        lay.addLayout(row)
+        split = QSplitter(Qt.Horizontal)
+        self.rrg_plot = pg.PlotWidget()
+        self.rrg_plot.setBackground(theme.BG)
+        self.rrg_plot.setMenuEnabled(False)
+        self.rrg_plot.showGrid(x=True, y=True, alpha=0.1)
+        self.rrg_plot.setLabel("bottom", "RS-Ratio (relative trend vs NIFTY) →")
+        self.rrg_plot.setLabel("left", "RS-Momentum (is it improving?) →")
+        split.addWidget(self.rrg_plot)
+        self.rrg_tab = FrameTable(fmt={"RS-Ratio": "{:.2f}", "RS-Momentum": "{:.2f}", "Stocks": "{:.0f}",
+                                       "13-week return vs NIFTY": "{:+.1%}"}, signed={"13-week return vs NIFTY"})
+        self.rrg_tab.model_.term_overrides = {c: "rrg" for c in ("RS-Ratio", "RS-Momentum", "Quadrant", "4 weeks ago",
+                                                                  "Stocks", "13-week return vs NIFTY")}
+        self.rrg_tab.explainable = True
+        split.addWidget(self.rrg_tab)
+        split.setSizes([800, 520])
+        lay.addWidget(split, 1)
+        lay.addWidget(muted("Weekly. Tails show the last 5 weeks, the big dot is this week. Sectors usually rotate clockwise: "
+                            "Improving → Leading → Weakening → Lagging. Equal-weight industry indices of today's NIFTY 200 "
+                            "members with at least 3 stocks; an open approximation of the JdK RRG, so levels differ from "
+                            "commercial charts."))
+        self.tabs.addTab(w, "Sector rotation")
+
+    def _tab_changed(self, i: int) -> None:
+        if i in self._done or i == 0:
+            return
+        self._done.add(i)
+        {1: self._load_global, 2: self._load_breadth, 3: self._load_rrg}.get(i, lambda: None)()
+
+    def _load_global(self) -> None:
+        self.g_note.setText("Loading global markets from Yahoo…")
+        run_async(MD.fetch_global, self._got_global,
+                  on_error=lambda e: (self._done.discard(1), self.g_note.setText(
+                      f"Global data unavailable: {e.splitlines()[-1][:120]}")))
+
+    def _got_global(self, closes) -> None:
+        t = MD.global_table(closes, data.panel().bench)
+        if t.empty:
+            self.g_note.setText("No global data.")
+            return
+        view = t.drop(columns=["unit"]).copy()
+        for c in ("1D", "1W", "1M", "YTD", "1Y"):            # the yield moves in percentage points, not percent
+            view[c] = view[c].astype(object)
+            for name in t.index[t["unit"] == "pp"]:
+                v = t.loc[name, c]
+                view.loc[name, c] = "–" if v != v else f"{v * 100:+.0f} bp"
+        view["As of"] = pd.to_datetime(view["As of"]).dt.strftime("%d %b")
+        self.g_tab.set_frame(view)
+        pick = ["S&P 500", "Nasdaq", "Nikkei 225", "Hang Seng", "Brent crude", "Gold", "USD/INR"]
+        self.g_kpi.set_items([(n, f"{t.loc[n, 'Last']:,.2f}", theme.signed(t.loc[n, "1D"]), f"{t.loc[n, '1D']:+.2%} on the day")
+                              for n in pick if n in t.index])
+        self.g_note.setText("Yahoo daily closes, refreshed every 30 minutes; each market's last close (see 'As of'). "
+                            "Correlation uses weekly returns over the last year because the sessions close at different "
+                            "times. 10-year yield changes in basis points (1 bp = 0.01%).")
+
+    def _load_breadth(self) -> None:
+        b = MD.breadth_history(data.panel())
+        last = b.iloc[-1]
+        self.b_kpi.set_items([
+            ("% above 50-day", f"{last['% above 50-day']:.0%}", theme.signed(last["% above 50-day"] - 0.5), "of NIFTY 200"),
+            ("% above 200-day", f"{last['% above 200-day']:.0%}", theme.signed(last["% above 200-day"] - 0.5)),
+            ("Adv / Dec", f"{int(last['Advancers'])} / {int(last['Decliners'])}", None, f"{b.index[-1]:%d %b}"),
+            ("New highs − lows", f"{int(last['Highs − lows']):+d}", theme.signed(last["Highs − lows"]),
+             f"{int(last['New highs'])} highs, {int(last['New lows'])} lows"),
+            ("A/D line, 1 month", f"{int(b['A/D line'].iloc[-1] - b['A/D line'].iloc[-22]):+d}",
+             theme.signed(b["A/D line"].iloc[-1] - b["A/D line"].iloc[-22]), "net advancers"),
+            ("Breadth 1 month ago", f"{b['% above 50-day'].iloc[-22]:.0%}", None, "% above 50-day"),
+        ])
+        for c in self.b_charts:
+            self.b_lay.removeWidget(c)
+            c.deleteLater()
+        charts = [
+            (line_chart({"% above 50-day": b["% above 50-day"] * 100, "% above 200-day": b["% above 200-day"] * 100},
+                        "Share of stocks above their 50- and 200-day averages (%)"), "chart_breadth"),
+            (line_chart({"A/D line": b["A/D line"]}, "Advance-decline line (cumulative advancers − decliners)"),
+             "ad_line"),
+            (line_chart({"Highs − lows": b["Highs − lows"].rolling(5).mean(), "NIFTY % change":
+                         (b["NIFTY"] / b["NIFTY"].iloc[0] - 1) * 100},
+                        "New 52-week highs minus lows (5-day average) and NIFTY % change"), "highs_lows"),
+        ]
+        self.b_charts = []
+        for ch, key in charts:
+            ch.explain_key = key
+            ch.setMinimumHeight(230)
+            ch.set_range("1Y")
+            self.b_lay.addWidget(ch, 1)
+            self.b_charts.append(ch)
+
+    def _load_rrg(self) -> None:
+        tab, tails = MD.rrg(data.panel(), tail=5)
+        self.rrg_tab.set_frame(tab)
+        pl = self.rrg_plot
+        pl.clear()
+        if tab.empty:
+            return
+        xs = np.r_[[t["RS-Ratio"].to_numpy() for t in tails.values()]].ravel() if tails else np.array([100])
+        ys = np.r_[[t["RS-Momentum"].to_numpy() for t in tails.values()]].ravel() if tails else np.array([100])
+        dx = max(abs(np.nanmax(xs) - 100), abs(np.nanmin(xs) - 100), 1) * 1.15
+        dy = max(abs(np.nanmax(ys) - 100), abs(np.nanmin(ys) - 100), 1) * 1.15
+        for (x0, y0, col, name) in [(100, 100, "#12301F", "Leading"), (100, 100 - dy, "#33290F", "Weakening"),
+                                    (100 - dx, 100 - dy, "#3A1414", "Lagging"), (100 - dx, 100, "#122436", "Improving")]:
+            r = pg.QtWidgets.QGraphicsRectItem(x0, y0, dx, dy)
+            r.setBrush(pg.mkBrush(col))
+            r.setPen(pg.mkPen(None))
+            r.setZValue(-10)
+            pl.addItem(r)
+            lab = pg.TextItem(name, color=theme.MUTED, anchor=(0, 0) if y0 >= 100 else (0, 1))
+            lab.setPos(x0 + dx * 0.02 if x0 >= 100 else x0 + dx * 0.02, y0 + dy * 0.98 if y0 >= 100 else y0 + dy * 0.02)
+            pl.addItem(lab)
+        quad_col = {"Leading": theme.GREEN, "Weakening": theme.AMBER, "Lagging": theme.RED, "Improving": theme.BLUE}
+        for sec, t in tails.items():
+            q = tab.loc[sec, "Quadrant"] if sec in tab.index else "–"
+            col = quad_col.get(q, theme.MUTED)
+            pl.plot(t["RS-Ratio"].to_numpy(), t["RS-Momentum"].to_numpy(), pen=pg.mkPen(col, width=0.9),
+                    symbol="o", symbolSize=4, symbolBrush=col, symbolPen=None)
+            pl.plot([t["RS-Ratio"].iloc[-1]], [t["RS-Momentum"].iloc[-1]], pen=None, symbol="o", symbolSize=10,
+                    symbolBrush=col, symbolPen=pg.mkPen(theme.TEXT))
+            lab = pg.TextItem(sec[:22], color=col, anchor=(0, 1))
+            lab.setPos(t["RS-Ratio"].iloc[-1], t["RS-Momentum"].iloc[-1])
+            pl.addItem(lab)
+        pl.addLine(x=100, pen=pg.mkPen(theme.MUTED, style=Qt.DashLine))
+        pl.addLine(y=100, pen=pg.mkPen(theme.MUTED, style=Qt.DashLine))
+        pl.setXRange(100 - dx, 100 + dx, padding=0)
+        pl.setYRange(100 - dy, 100 + dy, padding=0)
 
     def refresh(self) -> None:
         self.base = MarketBase()
