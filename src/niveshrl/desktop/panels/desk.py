@@ -159,6 +159,9 @@ class DeskPanel(Panel):
         from .paper import PaperTab
         self.paper = PaperTab(ctx, lambda t: self.stock_selected.emit(t))
         self.tabs.addTab(self.paper, "Paper trading")
+        from .portfolio_tab import PortfolioTab
+        self.portfolio = PortfolioTab(ctx, lambda t: self.stock_selected.emit(t))
+        self.tabs.addTab(self.portfolio, "Portfolio && tax")
 
     def _save_settings(self) -> None:
         s = _S()
@@ -183,6 +186,7 @@ class DeskPanel(Panel):
         self._holdings()
         self._journal()
         self.paper.refresh()
+        self.portfolio.refresh()
 
     def _candidates(self) -> list[str]:
         src = self.source.currentData()

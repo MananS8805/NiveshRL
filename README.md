@@ -98,6 +98,8 @@ HOLD / EXIT / REVIEW), and a **journal** that scores your real trades in R after
 
 **Alerts and paper trading.** The Alerts screen builds your own rules ([custom_alerts.py](src/niveshrl/custom_alerts.py)): price, day move, price vs an N-day average, RSI(14), volume vs its 20-day average, new 52-week high/low; once or once a day; checked every 15 s against the live stream with Windows notifications and a persistent log. My desk → **Paper trading** ([paper.py](src/niveshrl/paper.py)) is a manual order ticket (market / limit, optional bracket stop and target, one click to fill it from the swing plan) whose orders fill against live prices, with positions, closed trades in R and delivery costs. A stock page has *Set alert* and *Paper trade this plan* buttons. Nothing is ever sent to a broker.
 
+**Portfolio & tax** ([portfolio_analytics.py](src/niveshrl/research/portfolio_analytics.py)). From your Kite holdings and tradebook exports: portfolio value, beta, volatility, 1-day 95% VaR, sector allocation, the largest holding, effective number of holdings and each stock's share of risk; XIRR; realised P&L by month; and a financial-year capital-gains estimate (FIFO lots, 12-month rule, STCG 20% / LTCG 12.5% above ₹1.25 lakh plus cess, loss set-off and carry-forward) with harvesting ideas. Simplified, not tax advice.
+
 **Track record.** Every saved 'watch for strength' pick is followed with those rules (next open; a third booked at T1 and
 the stop moved to entry; the rest trailed 3 × ATR; 60-day cap; delivery costs) next to an equal random sample, forward as
 days accumulate, plus a historical replay on point-in-time members (result above). A FinBERT sentiment forward test

@@ -1187,6 +1187,64 @@ E("paper_trading", "Paper trading", "Desk",
   aliases=["Paper equity", "Paper cash", "Unrealised P&L", "Realised P&L", "Closed paper trades", "Side", "Type",
            "Limit", "Target", "Placed", "Avg", "P&L ₹", "P&L %", "Open R", "Opened", "Closed", "Reason", "Entry", "Exit",
            "Order ticket", "Open orders", "Positions", "Closed paper trades"])
+E("portfolio_risk", "Portfolio risk and allocation", "Desk",
+  "How your current holdings behave together: value, beta (how much the portfolio moves when NIFTY moves 1%), "
+  "annualised volatility, 1-day value at risk, sector weights, the largest holding and the 'effective' number of "
+  "holdings.",
+  how="Daily returns of today's holdings at today's weights over the last year (as if you had held them all year). "
+      "VaR = the loss exceeded on only 5% of those days (historical). Effective holdings = 1 ÷ Σ weight²: ten equal "
+      "holdings = 10, one 50% position among ten ≈ 3.5.",
+  bands=[(0.8, "defensive", "beta below 0.8"), (1.2, "market-like", ""), (INF, "aggressive", "beta above 1.2")],
+  use="Shows whether the portfolio is really diversified or a bet on one sector or one stock, and the size of an "
+      "ordinary bad day in rupees before it happens.",
+  caveat="Backward-looking: crashes exceed the VaR, and correlations rise in sell-offs. Holdings outside the NIFTY 200 "
+         "have no price history here and are left out.",
+  related=["beta", "risk_contrib", "max_drawdown"],
+  aliases=["Portfolio value", "Portfolio beta", "Portfolio volatility", "1-day VaR (95%)", "Largest holding",
+           "Effective holdings", "Weight", "Value ₹", "Risk and allocation"])
+E("risk_contrib", "Share of portfolio risk", "Desk",
+  "Each holding's share of the portfolio's total variance: weight × its covariance with the portfolio ÷ portfolio "
+  "variance. The shares add up to 100%.",
+  use="A 10% position can carry 25% of the risk if it is volatile and moves with the rest; trimming it reduces risk "
+      "more than trimming a calm, unrelated stock.", related=["portfolio_risk"], aliases=["Share of risk"])
+E("xirr", "XIRR", "Desk",
+  "The annualised return of all your trades, taking timing into account: every buy is money in, every sale and "
+  "today's value of what you still hold is money out, each on its own date.",
+  how="Solves Σ cash flow ÷ (1 + r)^(years since the first trade) = 0 for r. Before brokerage and taxes.",
+  bands=[(0.0, "losing money", ""), (0.12, "below a typical index fund", "NIFTY's long-run average is ~11-13%/yr"),
+         (INF, "beating a typical index fund", "")], unit="pct",
+  use="The fair way to compare your trading with an index fund or FD, because it accounts for when money went in.",
+  caveat="Needs the full history: sales of shares bought before the tradebook starts are left out. Short histories "
+         "give extreme annualised numbers.", related=["cagr", "cg_tax"], aliases=["XIRR"])
+E("cg_tax", "Capital-gains tax on shares", "Desk",
+  "Profit from selling listed shares is taxed by holding period. Held 12 months or less: short-term (STCG) at 20%. "
+  "Held longer: long-term (LTCG) at 12.5% on the year's net gains above ₹1,25,000. Plus 4% cess. These rates apply to "
+  "sales from 23 July 2024.",
+  how="Sales are matched to the oldest buys first (FIFO). Within a financial year (April-March) short-term losses can "
+      "offset short- or long-term gains; long-term losses only long-term gains. Net losses carry forward 8 years.",
+  use="Know the tax a sale will trigger before you sell, and keep enough cash for advance tax.",
+  caveat="An estimate for understanding, not tax advice: no surcharge, no grandfathering of gains before 31 Jan 2018, "
+         "no adjustment of lots for bonuses/splits, and costs are ignored. Check with a tax professional.",
+  related=["stcg", "tax_harvest", "xirr"],
+  aliases=["Realised gains", "Taxable STCG", "Taxable LTCG", "Estimated tax", "LTCG allowance left", "Bought", "Sold",
+           "Buy ₹", "Sell ₹", "Gain ₹", "Days held", "Term", "FY", "Returns and capital-gains tax",
+           "Realised sales matched to buys (FIFO)"])
+E("tax_harvest", "Tax ideas (harvesting)", "Desk",
+  "Ways the timing of a sale changes this year's tax: booking a loss that offsets taxable gains, selling and rebuying a "
+  "long-term winner to use the tax-free ₹1.25 lakh LTCG allowance (it resets your cost price higher), or waiting a "
+  "few days for a short-term winner to turn long-term.",
+  how="'Est. tax effect' = the tax saved (or extra tax from selling early) at 20% / 12.5% plus cess, for this "
+      "financial year's gains so far.",
+  use="Worth checking before March 31. India has no wash-sale rule for shares, but a sale must be genuine and costs "
+      "apply on both legs.",
+  caveat="Suggestions to look at, not advice: a tax saving never justifies holding a bad position or selling a good "
+         "one, and the estimate ignores costs and your other income.", related=["cg_tax", "stcg"],
+  aliases=["Idea", "Unrealised ₹", "Est. tax effect ₹", "Tax ideas for this year (not advice)"])
+E("pnl_calendar", "Realised P&L calendar", "Desk",
+  "Your realised gains and losses by month and year, from the tradebook matched FIFO (before costs).",
+  use="Shows streaks and seasonality in your own results: are losses clustered after big wins? Did one month make or "
+      "break the year?", related=["cg_tax", "journal"],
+  aliases=["Realised P&L by month (₹, FIFO, before costs)"])
 E("watchlist_tier", "Watchlist tier", "Desk", "★ Must have = your highest-priority stocks; ☆ Preferred = on your radar.",
   aliases=["Tier"], related=["alerts"])
 E("alerts", "Watchlist alerts", "Desk",

@@ -40,3 +40,4 @@ data/alerts.json
 data/alerts_log.json
 data/paper.json
 data/*.tmp
+data/tradebook.json

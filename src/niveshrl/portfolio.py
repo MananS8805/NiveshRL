@@ -160,3 +160,28 @@ def journal_stats(trades: list[Trade]) -> dict:
     return {"closed": len(rs), "win_rate": len(wins) / len(rs), "avg_r": sum(rs) / len(rs),
             "median_r": float(pd.Series(rs).median()), "total_r": sum(rs),
             "profit_factor": (sum(wins) / sum(losses)) if losses and sum(losses) > 0 else float("inf")}
+
+
+# --------------------------------------------------------------------------- tradebook (for XIRR and capital-gains tax)
+TRADEBOOK = ROOT / "data" / "tradebook.json"
+
+
+def import_tradebook(text: str, merge: bool = True) -> pd.DataFrame:
+    """Parse a Kite tradebook CSV and store it; ``merge`` keeps earlier imports (duplicates dropped), so several
+    yearly exports can be combined."""
+    from .research.portfolio_analytics import parse_tradebook_csv
+    new = parse_tradebook_csv(text)
+    old = load_tradebook() if merge else pd.DataFrame()
+    df = pd.concat([old, new]).drop_duplicates(["ticker", "date", "side", "qty", "price"]) if len(old) else new
+    df = df.sort_values(["date", "side"]).reset_index(drop=True)
+    _write(TRADEBOOK, {"trades": [{**r, "date": pd.Timestamp(r["date"]).isoformat()} for r in df.to_dict("records")]})
+    return df
+
+
+def load_tradebook() -> pd.DataFrame:
+    rows = _read(TRADEBOOK).get("trades", [])
+    if not rows:
+        return pd.DataFrame(columns=["ticker", "date", "side", "qty", "price"])
+    df = pd.DataFrame(rows)
+    df["date"] = pd.to_datetime(df["date"])
+    return df.sort_values(["date", "side"]).reset_index(drop=True)
