@@ -1,4 +1,5 @@
-"""Stock panel: live price, watchlist controls, key stats, candlestick chart, news + FinBERT,
+"""Stock panel: live price, watchlist controls, overview (report card + why it is moving), candlestick chart, key
+stats, peers, seasonality & results reactions, risk (relative strength, volatility cone, drawdowns), news + FinBERT,
 technicals, financial statements, ownership/analysts, model outputs and company profile."""
 from __future__ import annotations
 
@@ -10,9 +11,11 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QTabWidget, QTe
 
 from ... import watchlist as wl
 from ...research import fundamentals as fx
+from ...research import stockinfo as SI
+from ...research.screener import COLUMNS as SCR_COLS
 from ...research.technicals import TECH_COLUMNS
 from .. import data, theme
-from ..widgets import FrameTable, KpiRow, PriceChart, h1, muted, run_async
+from ..widgets import ExplainButton, FrameTable, KpiRow, PriceChart, h1, h2, line_chart, muted, run_async
 from . import Panel, scrolling, vbox
 
 SIGNALS = {
@@ -86,6 +89,7 @@ class StockPanel(Panel):
         lay.addWidget(self.desk)
         self.stats = KpiRow(cols=4)
         self.tabs = QTabWidget()
+        self._build_overview()
         self.chart = PriceChart()
         self.tabs.addTab(self.chart, "Chart")
         sw = QWidget()
@@ -95,6 +99,9 @@ class StockPanel(Panel):
         self.tabs.addTab(sw, "Key stats")
         self.plan_view = QTextBrowser()
         self.tabs.addTab(self.plan_view, "Trade plan")
+        self._build_peers()
+        self._build_events()
+        self._build_risk()
         self.news = FrameTable(fmt={"Score": "{:+.2f}"}, signed={"Score"})
         self.news.model_.term_overrides = {"Score": "finbert"}
         self.news.doubleClicked.connect(self._open_news)
@@ -125,6 +132,226 @@ class StockPanel(Panel):
         lay.addWidget(self.tabs, 1)
         self._set_wl_buttons()
 
+    # ------------------------------------------------------------------ deep-dive tabs
+    def _build_overview(self) -> None:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        row = QHBoxLayout()
+        row.addWidget(h2("Report card", "report_card"))
+        row.addStretch(1)
+        row.addWidget(ExplainButton("report_card"))
+        lay.addLayout(row)
+        self.card = KpiRow(cols=5)
+        lay.addWidget(self.card)
+        self.card_view = QTextBrowser()
+        lay.addWidget(self.card_view, 2)
+        lay.addWidget(h2("Why is it moving?", "why_moving"))
+        self.why = QTextBrowser()
+        self.why.setMaximumHeight(140)
+        lay.addWidget(self.why)
+        self.tabs.addTab(w, "Overview")
+
+    def _build_peers(self) -> None:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        self.peer_note = muted("")
+        self.peers = FrameTable()
+        self.peers.row_clicked.connect(lambda t: self.stock_selected.emit(str(t)))
+        lay.addWidget(self.peer_note)
+        lay.addWidget(self.peers, 1)
+        lay.addWidget(muted("Same NSE industry, largest first. Click a row to open that stock; right-click a value "
+                            "to explain it."))
+        self.tabs.addTab(w, "Peers")
+
+    def _build_events(self) -> None:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        lay.addWidget(h2("Seasonality: average return by calendar month", "seasonality"))
+        self.season = FrameTable(fmt={"avg return": "{:+.2%}", "median": "{:+.2%}", "up years": "{:.0%}",
+                                      "avg vs NIFTY": "{:+.2%}", "years": "{:.0f}"},
+                                 signed={"avg return", "median", "avg vs NIFTY"})
+        self.season.model_.term_overrides = {c: "seasonality" for c in ("avg return", "median", "up years",
+                                                                         "avg vs NIFTY", "years")}
+        self.season.setMinimumHeight(300)
+        lay.addWidget(self.season)
+        lay.addWidget(h2("How it reacted to quarterly results", "results_reaction"))
+        self.ev_kpi = KpiRow(cols=5)
+        lay.addWidget(self.ev_kpi)
+        self.react = FrameTable(fmt={"EPS est.": "{:,.2f}", "EPS actual": "{:,.2f}", "surprise %": "{:+.1f}",
+                                     "day move": "{:+.2%}", "vs NIFTY": "{:+.2%}", "next 20d vs NIFTY": "{:+.2%}"},
+                                signed={"surprise %", "day move", "vs NIFTY", "next 20d vs NIFTY"})
+        self.react.model_.term_overrides = {"results": "results_reaction", "EPS est.": "eps_surprise",
+                                            "EPS actual": "eps_surprise", "surprise %": "eps_surprise",
+                                            "day move": "results_reaction", "vs NIFTY": "results_reaction",
+                                            "next 20d vs NIFTY": "post_results_drift"}
+        self.react.setMinimumHeight(260)
+        lay.addWidget(self.react)
+        lay.addWidget(h2("Dividends", "dividend_history"))
+        self.div_kpi = KpiRow(cols=3)
+        lay.addWidget(self.div_kpi)
+        self.divs = FrameTable(fmt={"dividend ₹": "{:,.2f}"})
+        self.divs.model_.term_overrides = {"Ex-date": "dividend_history", "dividend ₹": "dividend_history"}
+        self.divs.setMinimumHeight(200)
+        lay.addWidget(self.divs)
+        self.ev_note = muted("")
+        lay.addWidget(self.ev_note)
+        self.tabs.addTab(scrolling(w), "Seasonality && events")
+
+    def _build_risk(self) -> None:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        self.rs_kpi = KpiRow(cols=4)
+        lay.addWidget(self.rs_kpi)
+        self.rs_box = QVBoxLayout()
+        lay.addLayout(self.rs_box)
+        self.rs_chart = None
+        lay.addWidget(h2("Volatility cone: where the price may be (not where it will go)", "vol_cone"))
+        self.cone = FrameTable(fmt={"95% low": "₹{:,.1f}", "68% low": "₹{:,.1f}", "68% high": "₹{:,.1f}",
+                                    "95% high": "₹{:,.1f}", "1σ move": "±{:.1%}"})
+        self.cone.model_.term_overrides = {c: "vol_cone" for c in ("95% low", "68% low", "68% high", "95% high",
+                                                                    "1σ move")}
+        self.cone.setMinimumHeight(150)
+        lay.addWidget(self.cone)
+        self.cone_note = muted("")
+        lay.addWidget(self.cone_note)
+        lay.addWidget(h2("Deepest falls in the price history", "drawdown_history"))
+        self.dds = FrameTable(fmt={"depth": "{:.1%}", "days to recover": "{:,.0f}"})
+        self.dds.model_.term_overrides = {c: "drawdown_history" for c in ("peak", "trough", "depth", "recovered",
+                                                                           "days to recover")}
+        self.dds.setMinimumHeight(180)
+        lay.addWidget(self.dds)
+        self.tabs.addTab(scrolling(w), "Risk")
+
+    def _deep_dive(self) -> None:
+        t, p, table = self.ticker, data.panel(), data.screener_table()
+        # overview: report card + why it is moving
+        card = SI.report_card(table, t)
+        self.card.ticker = t
+        self.card.set_items([(f"{k} score", "–" if v["score"] != v["score"] else f"{v['score']:.0f}/100",
+                              None if v["score"] != v["score"] else theme.GREEN if v["score"] >= 66 else
+                              theme.RED if v["score"] < 34 else None, v["verdict"]) for k, v in card.items()])
+        if card:
+            grp = next(iter(card.values()))
+            html = "".join(f"<p><b style='color:{theme.AMBER}'>{k}: {v['verdict']}</b><br>"
+                           + ("<br>".join("· " + r for r in v["reasons"]) or "· not enough data") + "</p>"
+                           for k, v in card.items())
+            html += (f"<p style='color:{theme.MUTED}'>Each score is the stock's percentile among the {grp['peers']} "
+                     f"{grp['group']} stocks in the NIFTY 200 on each measure (100 = best in the group), averaged. "
+                     "Relative to its peers, not absolute; a description, not a forecast or advice.</p>")
+        else:
+            html = "<p>Run the daily refresh (F5) to build the screener table this needs.</p>"
+        self.card_view.setHtml(html)
+        tk = self._live()
+        live = tk["change_percent"] / 100 if tk and tk.get("change_percent") is not None else None
+        try:
+            self.why.setHtml(f"<p>{SI.why_moving(t, table, p, data.dload('news'), live)}</p>"
+                             f"<p style='color:{theme.MUTED}'>Built from today's move, its sector, volume, gap, the "
+                             "results calendar, headlines and the pivot state. Coincidences, not proven causes.</p>")
+        except (KeyError, IndexError, ValueError) as e:
+            self.why.setHtml(f"<p>Not enough data to explain today's move ({e}).</p>")
+        # peers (index = tickers, so a click opens the stock)
+        pe = SI.peers(table, t)
+        self.peer_note.setText(f"{len(pe)} largest stocks in {p.sectors.get(t, '')} (NIFTY 200); "
+                               f"{t.replace('.NS', '')} is marked ◀" if len(pe) else
+                               "Run the daily refresh to build the peer table.")
+        if len(pe):
+            pe = pe.rename(columns={c: SCR_COLS[c][0] for c in pe.columns if c in SCR_COLS})
+            pe.insert(0, "", ["◀" if i == t else "" for i in pe.index])
+            self.peers.model_.fmt = {lab: ("{:,.0f}" if "score" in lab.lower() or "cap" in lab.lower() else "{:,.2f}")
+                                     if kind != "pct" else "{:+.1%}" if grp == "Returns" or "growth" in lab.lower()
+                                     else "{:.1%}" for lab, grp, kind in SCR_COLS.values() if lab in pe.columns}
+            self.peers.model_.signed = {lab for lab, grp, _ in SCR_COLS.values()
+                                        if lab in pe.columns and (grp == "Returns" or "growth" in lab.lower())}
+        self.peers.ticker_hint = t
+        self.peers.set_frame(pe if len(pe) else pd.DataFrame())
+        # seasonality
+        se = SI.seasonality(p, t)
+        self.season.set_frame(se.rename_axis("Month").reset_index().set_index("Month") if len(se) else pd.DataFrame())
+        # risk: relative strength, cone, drawdowns
+        rs = SI.relative_strength(p, t)
+        self.rs_kpi.ticker = t
+        self.rs_kpi.set_items([
+            ("vs NIFTY (1 year)", f"{rs['vs_nifty']:+.1%}", theme.signed(rs["vs_nifty"]), "relative performance"),
+            ("vs sector (1 year)", "–" if rs["vs_sector"] != rs["vs_sector"] else f"{rs['vs_sector']:+.1%}",
+             theme.signed(rs["vs_sector"]), f"vs {rs['n_peers']} peers, equal weight"),
+            ("Beta", "–" if rs["beta"] != rs["beta"] else f"{rs['beta']:.2f}", None, "1 year vs NIFTY, daily"),
+            ("Correlation with NIFTY", "–" if rs["corr"] != rs["corr"] else f"{rs['corr']:.2f}", None, "1 year, daily"),
+        ])
+        if self.rs_chart is not None:
+            self.rs_box.removeWidget(self.rs_chart)
+            self.rs_chart.deleteLater()
+        series = {"vs NIFTY": rs["rs_nifty"]}
+        if rs["rs_sector"] is not None:
+            series["vs sector"] = rs["rs_sector"]
+        self.rs_chart = line_chart(series, "Relative strength: stock ÷ benchmark, rebased to 1 a year ago "
+                                           "(rising = beating it)")
+        self.rs_chart.explain_key = "rs_line"
+        self.rs_chart.setMinimumHeight(280)
+        self.rs_box.addWidget(self.rs_chart)
+        price = float(p.close[t].dropna().iloc[-1])
+        sig, src = SI.cone_sigma(t, data.vol_forecasts(), table, p.close.index[-1])
+        if sig == sig:
+            self.cone.set_frame(SI.vol_cone(price, sig).rename_axis("Horizon"))
+            self.cone_note.setText(f"From ₹{price:,.2f} using σ = {sig:.1%} a year ({src}). Log-normal, zero drift: "
+                                   "if volatility stays as estimated, about 68% of outcomes land inside the inner band "
+                                   "and 95% inside the outer one. Results days and crashes break out of it more often.")
+        else:
+            self.cone.set_frame(pd.DataFrame())
+            self.cone_note.setText("No volatility estimate for this stock yet.")
+        dd = SI.drawdowns(p, t)
+        if len(dd):
+            dd = dd.copy()
+            for c in ("peak", "trough", "recovered"):
+                dd[c] = [d.strftime("%d %b %Y") if isinstance(d, pd.Timestamp) and not pd.isna(d) else "not yet"
+                         for d in dd[c]]
+            dd = dd.reset_index(drop=True)
+            dd.index = [f"#{i + 1}" for i in range(len(dd))]
+        self.dds.set_frame(dd)
+        # results and dividends arrive from Yahoo in _got_events
+        for t_ in (self.react, self.divs):
+            t_.set_frame(pd.DataFrame())
+        self.ev_kpi.set_items([])
+        self.div_kpi.set_items([])
+
+    def _got_events(self, ticker: str, ev: dict) -> None:
+        if ticker != self.ticker:
+            return                                    # user moved on while this was loading
+        data.prune_fundamentals()
+        p = data.panel()
+        df, summ = SI.results_reaction(p, ticker, ev.get("earnings"))
+        self.ev_kpi.ticker = ticker
+        if summ:
+            self.ev_kpi.set_items([
+                ("Results quarters", str(summ["quarters"]), None, "with price data"),
+                ("Avg results-day move", f"±{summ['avg abs move']:.1%}", None, "absolute, vs previous close"),
+                ("Up reactions", f"{summ['up reactions']:.0%}", None, "results days that closed up"),
+                ("Avg 20-day drift", "–" if summ["avg 20d drift"] != summ["avg 20d drift"]
+                 else f"{summ['avg 20d drift']:+.1%}", theme.signed(summ["avg 20d drift"]), "after results, vs NIFTY"),
+                ("Beat estimate", "–" if summ["beat estimate"] != summ["beat estimate"] else f"{summ['beat estimate']:.0%}",
+                 None, "EPS above consensus"),
+            ])
+            v = df.copy()
+            v.index = v.pop("results").dt.strftime("%d %b %Y")
+            v.index.name = "results"
+            self.react.set_frame(v)
+        price = float(p.close[ticker].dropna().iloc[-1])
+        dv, ds = SI.dividends(ev.get("dividends"), price)
+        if ds:
+            self.div_kpi.ticker = ticker
+            self.div_kpi.set_items([
+                ("Trailing 12m dividend", f"₹{ds['trailing 12m ₹']:,.2f}", None, "per share"),
+                ("Trailing yield", f"{ds['trailing yield']:.2%}", None, "÷ last close"),
+                ("Years paid", str(ds["years paid"]), None, "calendar years with a dividend"),
+            ])
+            dv.index = dv.index.strftime("%d %b %Y")
+            self.divs.set_frame(dv)
+        errs = ev.get("errors") or []
+        self.ev_note.setText(("Yahoo: " + "; ".join(errs) + ". " if errs else "")
+                             + ("" if summ else "No past results dates from Yahoo for this stock. ")
+                             + ("" if ds else "No dividends recorded on Yahoo. ")
+                             + "Results day = the first session that could react (the same day if announced before "
+                               "15:30 IST). Dividends per share as Yahoo reports them.")
+
     # ------------------------------------------------------------------ public
     def show_stock(self, ticker: str) -> None:
         self.ticker = ticker
@@ -143,12 +370,17 @@ class StockPanel(Panel):
         self._technicals()
         self._models()
         self._plan()
+        self._deep_dive()
         for t in self.stmts.values():
             t.set_frame(pd.DataFrame())
         self.stats.set_items([])
         tk = ticker
         run_async(data.fundamentals, lambda f, tk=tk: self._got_fund(tk, f), tk,
                   on_error=lambda e, tk=tk: self.sub.setText(f"Yahoo financials unavailable: {e.splitlines()[-1][:120]}"))
+        self.ev_note.setText("Loading results dates and dividends from Yahoo…")
+        run_async(data.stock_events, lambda ev, tk=tk: self._got_events(tk, ev), tk,
+                  on_error=lambda e, tk=tk: tk == self.ticker and self.ev_note.setText(
+                      f"Yahoo results/dividend data unavailable: {e.splitlines()[-1][:120]}"))
 
     def refresh(self) -> None:
         if self.ticker:

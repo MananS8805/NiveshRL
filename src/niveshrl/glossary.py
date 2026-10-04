@@ -18,7 +18,8 @@ from dataclasses import dataclass, field
 
 INF = math.inf
 CATEGORIES = ["Market", "Valuation", "Quality & growth", "Technicals", "News & analysts", "Model outputs",
-              "Model quality", "Models", "Backtest & risk", "Volatility forecaster", "Regimes", "Charts", "Desk"]
+              "Model quality", "Models", "Backtest & risk", "Volatility forecaster", "Regimes", "Charts", "Desk",
+              "Stock deep-dive"]
 
 
 @dataclass
@@ -1043,6 +1044,125 @@ E("alerts", "Watchlist alerts", "Desk",
   aliases=["Alerts", "Buy ≤", "Sell ≥"], related=["watchlist_tier"])
 E("price", "Price / last", "Desk", "The latest traded price: live from the stream during market hours, otherwise the "
   "last close.", aliases=["Price", "Last", "close"])
+
+
+# =====================================================================================================
+# Stock deep-dive
+# =====================================================================================================
+E("report_card", "Report card", "Stock deep-dive",
+  "Five scores from 0 to 100 that sum up a stock against its own NSE industry: Valuation (P/E, P/B, EV/EBITDA), "
+  "Quality (ROE, operating margin, debt/equity), Growth (revenue and earnings growth), Momentum (3- and 6-month "
+  "return, distance above the 200-day average) and Risk (volatility, beta, 1-year max drawdown).",
+  how="For each measure, the share of NIFTY 200 stocks in the same industry the stock beats (lower is better for "
+      "multiples, debt, volatility and beta); the category score is the average. Loss-making companies get no "
+      "valuation percentile. Industries with fewer than 4 members are compared with the whole NIFTY 200.",
+  bands=[(34, "weak for its group", "bottom third of its peers"), (66, "middling", ""),
+         (INF, "strong for its group", "top third of its peers")],
+  use="A fast, plain-language first read: is it cheap or expensive, well run, growing, in favour, and how bumpy? The "
+      "reasons under each score show which measures drove it.",
+  caveat="Relative, not absolute: the best stock in an expensive sector can still be expensive. Built from Yahoo "
+         "fundamentals (can be stale or missing) and today's prices. Not a rating or a recommendation; no backtest "
+         "shows these scores predict returns.",
+  related=["pe", "roe", "revenue_growth", "ret_3m", "vol_60d"],
+  aliases=["Valuation score", "Quality score", "Growth score", "Momentum score", "Risk score"])
+E("why_moving", "Why is it moving?", "Stock deep-dive",
+  "A short explanation of today's move assembled from facts: the move vs NIFTY and its sector, volume vs normal, the "
+  "opening gap, results due or just out, the latest headlines and their FinBERT tone, and the breakout state.",
+  how="If the stock moved within 0.5% of its sector's average, the move is called sector-wide; if it differs by 1.5% "
+      "or more, stock-specific. Volume ≥ 1.5× its 20-day average = heavy (conviction), < 0.8× = light.",
+  use="Separates 'the whole sector moved' from 'something happened to this company', which decides whether news or "
+      "the market is the thing to read.",
+  caveat="These are coincidences in time, not proven causes. A headline on the same day may not be why it moved.",
+  related=["vol_ratio", "gap_pct", "finbert", "pattern_state"])
+E("rs_line", "Relative strength line", "Stock deep-dive",
+  "The stock's price divided by a benchmark (NIFTY, or an equal-weight average of its industry peers), rebased to 1 a "
+  "year ago. 1.10 = it has done 10% better than the benchmark over the year.",
+  bands=[(-0.10, "lagging clearly", "more than 10% behind"), (0.0, "lagging", ""), (0.10, "leading", ""),
+         (INF, "leading clearly", "more than 10% ahead")], unit="pct",
+  reading="Look at the slope, not the price: a rising line means the stock is beating the benchmark even if both are "
+          "falling. A stock rising with a falling RS line is just riding the market.",
+  use="Leaders tend to keep leading for a while (momentum), and the sector line shows whether it is the company or "
+      "the industry that is strong.",
+  caveat="Price only (no dividends). Sector line = equal-weight average of today's NIFTY 200 members in that industry.",
+  related=["ret_1y", "beta", "momentum_model"],
+  aliases=["vs NIFTY (1 year)", "vs sector (1 year)",
+           "Relative strength: stock ÷ benchmark, rebased to 1 a year ago (rising = beating it)"])
+E("corr_nifty", "Correlation with NIFTY", "Stock deep-dive",
+  "How closely the stock's daily moves line up with NIFTY's, from −1 (opposite) to +1 (in lock-step), over 1 year.",
+  bands=[(0.3, "independent", "moves mostly on its own news"), (0.6, "partly tied", ""),
+         (INF, "tied to the market", "the market explains most of its daily moves")],
+  use="Low correlation helps diversify a portfolio; high correlation means market risk dominates. Beta = correlation "
+      "× (stock volatility ÷ NIFTY volatility).", related=["beta"])
+E("seasonality", "Seasonality", "Stock deep-dive",
+  "The stock's average and median return in each calendar month across all the years of price history, the share of "
+  "years that month was up, and the average return vs NIFTY in that month.",
+  how="Month-end to month-end closes (adjusted for splits and bonuses). 'years' = how many of each month exist.",
+  use="Context, e.g. a stock that usually rises into its results month. Look for months that are consistent (high or "
+      "low 'up years') and different from NIFTY's.",
+  caveat="With ~20 years per month, a 2% average difference is easily luck. Seasonality has no measured edge in this "
+         "app; treat it as trivia unless it has an economic reason (e.g. festive demand).",
+  related=["market_habits"], aliases=["avg return", "up years", "avg vs NIFTY",
+                                      "Seasonality: average return by calendar month"])
+E("results_reaction", "Results-day reaction", "Stock deep-dive",
+  "How the stock moved on the first session after each quarterly results announcement: the close-to-close move, and "
+  "the same move minus NIFTY's.",
+  how="Announcement times from Yahoo's earnings calendar, converted to IST; an announcement before 15:30 IST counts "
+      "that day, later ones the next trading day. Averages are over all quarters with price data.",
+  bands=[(0.02, "calm", "results rarely move it much"), (0.04, "normal", ""),
+         (INF, "jumpy", "results often move it a lot: size positions for a gap")], unit="pct",
+  use="Tells you how much risk holding through results carries: a stock that averages ±5% on results days can gap "
+      "past a stop. Pairs with 'Next results' on the stock header.",
+  caveat="Yahoo's dates for NSE stocks are sometimes off by a day; a wrong date mixes in an ordinary day. A few "
+         "quarters is a small sample.",
+  related=["post_results_drift", "eps_surprise", "next_results"],
+  aliases=["Results quarters", "Avg results-day move", "Up reactions", "day move",
+           "How it reacted to quarterly results"])
+E("post_results_drift", "Post-results drift", "Stock deep-dive",
+  "The stock's return over the 20 trading days after the results day, minus NIFTY's over the same days.",
+  use="Academic studies find prices keep drifting in the direction of an earnings surprise for weeks (post-earnings "
+      "announcement drift). Here it is just this stock's history; compare it with the surprise column.",
+  caveat="Not tested as a strategy in this app. The latest quarter has no value until 20 sessions have passed.",
+  related=["results_reaction", "eps_surprise"], aliases=["Avg 20-day drift", "next 20d vs NIFTY"])
+E("eps_surprise", "EPS surprise", "Stock deep-dive",
+  "Reported earnings per share vs the analysts' consensus estimate before the results, in percent.",
+  how="From Yahoo's earnings calendar ('EPS Estimate', 'Reported EPS', 'Surprise(%)').",
+  bands=[(-5, "big miss", ""), (0, "miss", ""), (5, "beat", ""), (INF, "big beat", "")],
+  use="Markets react to surprises, not to absolute numbers: a strong quarter that missed estimates often falls.",
+  caveat="Consensus coverage of Indian companies on Yahoo is thin and estimates can be stale. Revenue and guidance "
+         "matter too and are not shown.", related=["results_reaction", "eps"],
+  aliases=["Beat estimate", "EPS est.", "EPS actual", "surprise %"])
+E("dividend_history", "Dividend history", "Stock deep-dive",
+  "Every dividend per share Yahoo records for the stock, by ex-date, plus the last 12 months' total and its yield on "
+  "the last close.",
+  use="Consistency (years paid) says more about a company's cash than one year's yield. You must hold the shares "
+      "before the ex-date to receive a dividend; the price usually drops by about the dividend on that day.",
+  caveat="In India dividends are taxed at your slab rate. Old dividends are not adjusted for later splits/bonuses.",
+  related=["dividend_yield", "payout"], aliases=["Trailing 12m dividend", "Trailing yield", "Years paid",
+                                                 "dividend ₹", "Ex-date", "Dividends"])
+E("vol_cone", "Volatility cone", "Stock deep-dive",
+  "The price ranges the stock would stay inside with about 68% and 95% probability after 5, 10, 20 and 60 trading "
+  "days if its volatility stays at the estimate and moves are log-normal with no drift.",
+  how="σ = the vol LSTM's next-month forecast if it is under 45 days old, otherwise 60-day realised volatility. "
+      "1σ move over h days = σ × √(h/252); bands = price × e^(±σ√(h/252)) and e^(±1.96σ√(h/252)).",
+  use="Sanity-check targets and stops: a target outside the 95% band in your time frame needs something unusual to "
+      "happen; a stop inside the 68% band will be hit by ordinary noise.",
+  caveat="Says nothing about direction. Real returns have fat tails: moves beyond the 95% band happen more often than "
+         "5% of the time, especially around results.",
+  related=["vol_lstm", "vol_60d", "atr_pct"],
+  aliases=["95% low", "68% low", "68% high", "95% high", "1σ move",
+           "Volatility cone: where the price may be (not where it will go)"])
+E("drawdown_history", "Drawdown history", "Stock deep-dive",
+  "The deepest peak-to-trough falls in the stock's price history, when they started and bottomed, and how many "
+  "calendar days the price took to get back to the old peak.",
+  use="Shows what holding this stock has actually felt like: if it has fallen 50% twice before, it can again. "
+      "'not yet' = still below that peak.",
+  caveat="Adjusted prices from the data start (often 2005 or listing); price only, no dividends.",
+  related=["max_dd_1y", "max_drawdown", "chart_drawdown"],
+  aliases=["peak", "trough", "depth", "recovered", "days to recover", "Deepest falls in the price history"])
+E("peers", "Sector peers", "Stock deep-dive",
+  "The largest NIFTY 200 stocks in the same NSE industry, with returns, valuation, quality and the app's analyst and "
+  "next-day scores side by side.", use="Is this stock cheap or expensive, strong or weak, compared with its real "
+  "competitors? The report card turns this table into percentiles.", related=["report_card"])
 
 
 # =====================================================================================================

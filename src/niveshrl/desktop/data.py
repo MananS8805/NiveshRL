@@ -163,13 +163,19 @@ def fundamentals(ticker: str) -> dict:
 
 
 def prune_fundamentals(keep: int = 40) -> None:
-    """Bound the per-stock fundamentals cache (each holds several statement frames)."""
+    """Bound the per-stock fundamentals and Yahoo-events caches (each holds several statement frames)."""
     with _lock:
-        fx = sorted((v[0], k) for k, v in _cache.items() if k.startswith("fx:"))
-        for _, k in fx[:-keep]:
-            _cache.pop(k, None)
+        for pre in ("fx:", "ev:"):
+            old = sorted((v[0], k) for k, v in _cache.items() if k.startswith(pre))
+            for _, k in old[:-keep]:
+                _cache.pop(k, None)
 
 
 def cache_size() -> int:
     with _lock:
         return len(_cache) + len(_bt_cache)
+
+
+def stock_events(ticker: str) -> dict:
+    from ..research import stockinfo
+    return _cached(f"ev:{ticker}", 6 * 3600, lambda: stockinfo.yahoo_events(ticker))
