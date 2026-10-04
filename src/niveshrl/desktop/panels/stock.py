@@ -129,6 +129,10 @@ class StockPanel(Panel):
         self.tabs.addTab(self.owner, "Ownership && analysts")
         self.models = QTextBrowser()
         self.tabs.addTab(self.models, "NiveshRL models")
+        from .nse_views import StockNSETab
+        self.nse = StockNSETab()
+        self.tabs.addTab(self.nse, "F&&O && shareholding")
+        self.tabs.currentChanged.connect(lambda i: self.tabs.widget(i) is self.nse and self.nse.load())
         self.about = QTextBrowser()
         self.about.setOpenExternalLinks(True)
         self.tabs.addTab(self.about, "About")
@@ -375,6 +379,9 @@ class StockPanel(Panel):
         self._models()
         self._plan()
         self._deep_dive()
+        self.nse.set_stock(ticker)
+        if self.tabs.currentWidget() is self.nse:
+            self.nse.load()
         for t in self.stmts.values():
             t.set_frame(pd.DataFrame())
         self.stats.set_items([])
@@ -389,6 +396,12 @@ class StockPanel(Panel):
     def refresh(self) -> None:
         if self.ticker:
             self.show_stock(self.ticker)
+
+    def nse_changed(self) -> None:
+        if self.ticker:
+            self.nse.set_stock(self.ticker)
+            if self.tabs.currentWidget() is self.nse:
+                self.nse.load()
 
     def on_tick(self) -> None:
         if self.ticker:

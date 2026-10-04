@@ -192,3 +192,35 @@ def tagged_history() -> pd.DataFrame | None:
             return TC.tag_history(pd.read_parquet(TC.HISTORY), TC.context_tags(panel()))
         return None
     return _cached("tagged_hist", 3600, build)
+
+
+# --------------------------------------------------------------------------- optional NSE data (off by default)
+def nse_enabled() -> bool:
+    from PySide6.QtCore import QSettings
+    return QSettings("NiveshRL", "NiveshRL").value("nse/enabled", False, type=bool)
+
+
+def set_nse_enabled(on: bool) -> None:
+    from PySide6.QtCore import QSettings
+    QSettings("NiveshRL", "NiveshRL").setValue("nse/enabled", bool(on))
+
+
+def nse_fii_dii():
+    from ..research import nse
+    return _cached("nse:fii", 900, lambda: nse.fii_dii_history(nse.fii_dii()))
+
+
+def nse_deals():
+    from ..research import nse
+    return _cached("nse:deals", 900, nse.large_deals)
+
+
+def nse_shareholding(symbol: str):
+    from ..research import nse
+    return _cached(f"nse:sh:{symbol}", 24 * 3600, lambda: nse.shareholding(symbol))
+
+
+def nse_chain(symbol: str, expiry: str | None = None):
+    from ..research import nse
+    return _cached(f"nse:oc:{symbol}:{expiry}", 180, lambda: nse.option_chain(symbol, expiry))
+

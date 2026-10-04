@@ -198,6 +198,12 @@ class MainWindow(QMainWindow):
         self.tray_act.setChecked(QSettings("NiveshRL", "NiveshRL").value("close_to_tray", True, type=bool))
         self.tray_act.toggled.connect(lambda on: QSettings("NiveshRL", "NiveshRL").setValue("close_to_tray", on))
         opts.addAction(self.tray_act)
+        opts.addSeparator()
+        self.nse_act = QAction("Optional NSE data: F&&O option chains, FII/DII flows, bulk/block deals, shareholding "
+                               "(fragile)", self, checkable=True)
+        self.nse_act.setChecked(data.nse_enabled())
+        self.nse_act.toggled.connect(self._toggle_nse)
+        opts.addAction(self.nse_act)
         helpm = self.menuBar().addMenu("&Help")
         about = QAction("About NiveshRL", self)
         about.triggered.connect(self._about)
@@ -450,6 +456,14 @@ class MainWindow(QMainWindow):
         log.info("housekeeping: rss=%.0f MB cache=%d entries feed_msgs=%s restarts=%d",
                  self.proc.memory_info().rss / 2 ** 20, data.cache_size(),
                  self.ctx.feed.n_msgs if self.ctx.feed else 0, self.ctx.feed_restarts)
+
+    def _toggle_nse(self, on: bool) -> None:
+        data.set_nse_enabled(on)
+        data.clear("nse:")
+        for code in ("MKT", "DES"):
+            p = self.panels.get(code)
+            if p is not None and hasattr(p, "nse_changed"):
+                p.nse_changed()
 
     def _goto(self, code: str, ticker: str) -> None:
         if code == "ALRT":

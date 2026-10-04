@@ -41,3 +41,4 @@ data/alerts_log.json
 data/paper.json
 data/*.tmp
 data/tradebook.json
+data/nse/

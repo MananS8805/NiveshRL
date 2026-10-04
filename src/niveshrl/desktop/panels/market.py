@@ -107,6 +107,9 @@ class MarketPanel(Panel):
         self._build_global()
         self._build_breadth()
         self._build_rrg()
+        from .nse_views import MarketNSETab
+        self.nse = MarketNSETab()
+        self.tabs.addTab(self.nse, "Flows && F&&O")
         self._done: set[int] = set()
         self.tabs.currentChanged.connect(self._tab_changed)
 
@@ -176,7 +179,14 @@ class MarketPanel(Panel):
         if i in self._done or i == 0:
             return
         self._done.add(i)
-        {1: self._load_global, 2: self._load_breadth, 3: self._load_rrg}.get(i, lambda: None)()
+        {1: self._load_global, 2: self._load_breadth, 3: self._load_rrg, 4: self.nse.load}.get(i, lambda: None)()
+
+    def nse_changed(self) -> None:
+        self.nse._loaded = False
+        if self.tabs.currentWidget() is self.nse:
+            self.nse.load()
+        else:
+            self._done.discard(4)
 
     def _load_global(self) -> None:
         self.g_note.setText("Loading global markets from Yahoo…")

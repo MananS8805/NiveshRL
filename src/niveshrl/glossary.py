@@ -163,6 +163,62 @@ E("rrg", "Relative rotation graph (sector rotation)", "Market",
   related=["rs_line", "chart_sectors"],
   aliases=["RS-Ratio", "RS-Momentum", "Quadrant", "4 weeks ago", "13-week return vs NIFTY", "Sector rotation",
            "Sector rotation (relative rotation graph)"])
+E("option_chain", "Option chain and positioning", "Market",
+  "Every call and put strike for an expiry with its open interest (OI, contracts still open), today's change in OI, "
+  "volume, implied volatility and last price, from NSE. Summaries: put-call ratio, max pain, the strikes with the most "
+  "call and put OI, and at-the-money implied volatility.",
+  how="NSE's public option-chain API (optional, off by default). Max pain = the expiry price at which option buyers' "
+      "total payoff is smallest. Put-call ratio = total put OI ÷ total call OI.",
+  reading="Large call OI above the price is often read as resistance (writers expect it not to be crossed), large put OI "
+          "below as support. A PCR well above 1 means many puts are open: read either as hedging/fear or, contrarian, "
+          "as support. Prices are said to gravitate towards max pain near expiry; the evidence for that is weak.",
+  use="Shows where traders have positioned and how much movement options are pricing in (ATM IV).",
+  caveat="Positioning is not prediction: OI mixes hedges, spreads and naked bets, and writers are often wrong in trends. "
+         "NSE's data can be delayed and the endpoint can stop working. Not tested for edge in this app.",
+  related=["implied_vol", "open_interest", "vol_cone"],
+  aliases=["Put-call ratio (OI)", "Max pain", "Highest call OI", "Highest put OI", "ATM implied vol", "Option chain",
+           "Call LTP", "Put LTP", "Call volume", "Put volume", "Index options positioning (nearest expiry)",
+           "F&&O && shareholding", "Flows && F&&O"])
+E("implied_vol", "Implied volatility (IV)", "Market",
+  "The annualised volatility that makes an option's market price fair under the Black-Scholes model: how much "
+  "movement option buyers are paying for.",
+  bands=[(15, "calm", "for an index; single stocks are usually higher"), (30, "normal for a stock", ""),
+         (50, "elevated", "results or news expected"), (INF, "very high", "")],
+  use="Compare with the stock's realised or forecast volatility (Risk tab): IV far above it means options are "
+      "expensive, often before results. ATM IV ÷ √12 ≈ the 1-month move options price in.",
+  related=["option_chain", "vol_cone", "india_vix"], aliases=["Call IV", "Put IV"])
+E("open_interest", "Open interest (OI)", "Market",
+  "The number of option (or futures) contracts open at the end of the day. ΔOI = the change today: rising OI = new "
+  "positions, falling OI = positions being closed.",
+  reading="Price up with rising call writing (call OI up) can cap a move; put OI building under the price as it rises "
+          "is often read as support being added.",
+  related=["option_chain"], aliases=["Call OI", "Put OI", "Call ΔOI", "Put ΔOI"])
+E("shareholding", "Shareholding pattern", "Quality & growth",
+  "The % of shares held by the promoter and promoter group versus the public, quarter by quarter, from the company's "
+  "filings to NSE.",
+  reading="A rising promoter stake (buying from the market) is usually read as confidence; a steady fall can mean "
+          "selling or dilution. Large one-quarter changes deserve a look at the filing.",
+  caveat="Quarterly and filed weeks later. NSE's pledge data endpoint currently returns nothing, so pledges are not shown.",
+  related=["promoters", "institutions"],
+  aliases=["Promoter %", "Public %", "Employee trusts %", "Promoter change (pp)", "Filed",
+           "Shareholding by quarter (NSE filings)"])
+E("large_deals", "Bulk and block deals", "Market",
+  "Large trades disclosed by NSE for the latest day: bulk deals (one client trading more than 0.5% of a company's "
+  "shares in a day) and block deals (single trades of ₹10 crore or more in the special block window).",
+  use="Shows who is buying or selling in size: funds, promoters or known investors. Repeated buying by the same client "
+      "can be informative.", caveat="One day only (NSE's snapshot); a deal can be one side of a pre-arranged transfer.",
+  related=["shareholding", "fii_dii"],
+  aliases=["Client", "Side", "Quantity", "Price ₹", "Value ₹ Cr", "Symbol",
+           "Bulk and block deals (latest day)", "Bulk and block deals in this stock (latest day)"])
+E("fii_dii", "FII / DII flows", "Market",
+  "Net buying (+) or selling (−) in the cash market by foreign portfolio investors (FII/FPI) and domestic institutions "
+  "(mutual funds, insurers; DII), in ₹ crore, as published by NSE each evening.",
+  reading="Sustained FII selling has weighed on Indian stocks in many sell-offs, often absorbed by DII buying (SIP "
+          "inflows). One day means little; look at the run of days.",
+  caveat="Provisional figures. NSE serves only the latest day, so the history here starts when you turned the NSE "
+         "switch on.", related=["global_markets", "large_deals"],
+  aliases=["FII net", "DII net", "FII net, days seen", "DII net, days seen", "FII buy", "FII sell", "DII buy",
+           "DII sell", "FII / DII cash-market flows (₹ crore)"])
 E("adv_dec", "Advancers / decliners", "Market",
   "How many NIFTY 200 stocks rose vs fell today.",
   use="A quick read of participation: 150/44 is a broad rally, 51/143 broad selling, even if NIFTY moved little.",
