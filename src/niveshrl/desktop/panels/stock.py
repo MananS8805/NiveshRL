@@ -90,7 +90,7 @@ class StockPanel(Panel):
         self.stats = KpiRow(cols=4)
         self.tabs = QTabWidget()
         self._build_overview()
-        self.chart = PriceChart()
+        self.chart = PriceChart(controls=True)
         self.tabs.addTab(self.chart, "Chart")
         sw = QWidget()
         sl = QVBoxLayout(sw)
@@ -510,13 +510,8 @@ class StockPanel(Panel):
                            f"<p style='color:{theme.MUTED}'>{' · '.join(m for m in meta if m)}</p>")
 
     def _chart(self) -> None:
-        p = data.panel()
         t = self.ticker
-        df = pd.DataFrame({"Close": p.close[t]})
-        for k, src in [("Open", p.open), ("High", p.high), ("Low", p.low)]:
-            df[k] = src[t] if src is not None and t in src else np.nan
-        df["Volume"] = p.volume[t] if t in p.volume else np.nan
-        self.chart.plot(df.iloc[-1500:], title=f"{t.replace('.NS', '')} · daily (adjusted) · SMA50 / SMA200 · volume · RSI(14)")
+        self.chart.set_source(lambda tf, t=t: chart_source(t, tf))
 
     def _news(self) -> None:
         news = data.dload("news")
@@ -617,3 +612,36 @@ class StockPanel(Panel):
             html += f"<p>Next-month volatility forecast: LSTM {v['lstm']:.1%} · GARCH {v['garch']:.1%}</p>"
         html += f"<p style='color:{theme.MUTED}'>Walk-forward research output. Not a recommendation.</p>"
         self.models.setHtml(html)
+
+
+TF_NAMES = {"1m": "1-minute", "5m": "5-minute", "15m": "15-minute", "1h": "hourly", "1D": "daily (adjusted)",
+            "1W": "weekly (adjusted)"}
+
+
+def chart_source(ticker: str, tf: str) -> dict:
+    """Bars, comparison series and the swing plan for the stock chart (runs off the UI thread for intraday)."""
+    from ...research import chartdata as C
+    from ...research.plans import make_plan
+    from .desk import current_risk_state, desk_settings
+    p = data.panel()
+    df = C.bars(p, ticker, tf)
+    compare = {}
+    if tf in ("1D", "1W"):
+        compare["NIFTY 50"] = p.bench
+        sec = p.sectors.get(ticker)
+        peers = [x for x in p.close.columns if p.sectors.get(x) == sec and x != ticker]
+        if peers:
+            r = p.close[peers].pct_change(fill_method=None).mean(axis=1).fillna(0)
+            compare[f"{sec} (equal weight)"] = (1 + r).cumprod()
+        if tf == "1W":
+            compare = {k: v.reindex(df.index, method="ffill") for k, v in compare.items()}
+    else:
+        try:
+            compare["NIFTY 50"] = C.intraday_bars("^NSEI", tf)["Close"]
+        except Exception:  # noqa: BLE001 - the comparison is optional; the chart still draws
+            pass
+    st, rs = desk_settings(), current_risk_state()
+    plan = make_plan(p, ticker, st["capital"], st["risk_pct"], rs.multiplier)
+    return {"df": df, "compare": compare, "plan": plan,
+            "title": f"{ticker.replace('.NS', '')} · {TF_NAMES.get(tf, tf)}" + (" · IST, Yahoo (may be delayed)"
+                                                                               if tf not in ("1D", "1W") else "")}

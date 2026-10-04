@@ -318,6 +318,29 @@ E("from_52w_low", "Distance from 52-week low", "Technicals",
   related=["from_52w_high"], aliases=["From 52w low %"])
 E("new_52w", "New 52-week high / low", "Technicals", "1 if today set a new 1-year closing high (or low).",
   bands=[(0.5, "no", ""), (INF, "yes", "")], related=["from_52w_high"], aliases=["New 52w high", "New 52w low"])
+E("vwap", "VWAP (volume-weighted average price)", "Technicals",
+  "The average price paid today, weighting each bar's typical price (high + low + close) ÷ 3 by its volume. Resets at "
+  "every session's open; drawn on intraday timeframes only.",
+  reading="Above VWAP = today's buyers are, on average, in profit (intraday strength); below = sellers in control. "
+          "Institutions benchmark executions against it, so price often reacts at the line.",
+  use="The intraday agent's VWAP-reclaim/rejection setups use it. For a swing entry, buying well above VWAP means "
+      "paying up versus everyone else today.", caveat="Meaningless across days or on daily bars.",
+  related=["candle", "agent_trade"], aliases=["VWAP (intraday)", "VWAP"])
+E("pivots_cpr", "Pivot points and CPR", "Technicals",
+  "Floor-trader levels from the previous period's high (H), low (L) and close (C): pivot P = (H+L+C)/3, R1 = 2P−L, "
+  "S1 = 2P−H, R2 = P+(H−L), S2 = P−(H−L). The central pivot range (CPR) spans BC = (H+L)/2 and TC = 2P−BC.",
+  how="Previous day for intraday bars, previous week for daily bars, previous month for weekly bars.",
+  reading="A narrow CPR often precedes a trending day, a wide one a range day. Price holding above P/TC = bullish "
+          "bias; R1/S1 and R2/S2 are common profit-taking or reversal zones.",
+  caveat="Widely watched, which is why they sometimes work; not tested for edge in this app.",
+  related=["candle", "vwap"], aliases=["Pivots + CPR", "Pivots / CPR", "CPR"])
+E("fibonacci", "Fibonacci retracements", "Technicals",
+  "Horizontal levels at 23.6%, 38.2%, 50%, 61.8% and 78.6% of the swing between the highest high and lowest low on "
+  "screen, measured back from the end of the swing.",
+  how="Recomputed whenever you zoom or pan: the swing is always the visible window's.",
+  reading="In an up-move, pullbacks that hold the 38.2-61.8% zone are often read as healthy; a break of 78.6% suggests "
+          "the move has failed.", caveat="The ratios have no proven predictive power; treat them as a ruler, not a "
+          "signal.", related=["candle", "pivots_cpr"], aliases=["Fibonacci (visible swing)", "Fibonacci"])
 E("bb_pctb", "Bollinger %B", "Technicals",
   "Where the price sits inside its Bollinger Bands (20-day average ± 2 standard deviations): 0 = lower band, "
   "1 = upper band.",
@@ -368,19 +391,24 @@ E("signal_text", "Technical signal (text)", "Technicals",
   "A plain-language reading of the indicator's value using the conventional ranges on this page.",
   aliases=["Signal"])
 E("candle", "Price (candlestick) chart", "Charts",
-  "Each candle is one trading day: the body spans open → close (green = closed higher, red = lower), the thin wick "
-  "spans the day's high and low. Dashed lines: 50-day (blue) and 200-day (purple) moving averages. Below: daily "
-  "volume bars and RSI(14) with 30/70 guide lines.",
+  "Each candle is one bar of the chosen timeframe (1 minute … 1 week): the body spans open → close (green = closed "
+  "higher, red = lower), the thin wick spans the bar's high and low. Overlays and panes are chosen in Indicators: "
+  "SMA 50/200 (dashed blue/purple), EMA 9/21, VWAP, Bollinger bands, Supertrend, pivots + CPR, Fibonacci; volume "
+  "(green/red by candle), RSI(14) and MACD panes. Dashed horizontal lines show the swing trade plan (entry, stop, T1, "
+  "T2).",
+  how="1D/1W: the adjusted daily panel (weekly bars resampled from it). 1m (last 7 days), 5m/15m (60 days) and 1h "
+      "(2 years): Yahoo intraday bars in IST, cached for a minute or more; they can be delayed or have gaps.",
   reading="Rising candles above a rising 200-day line = long-term uptrend. Price crossing the 50-day line with high "
-          "volume = a trend change worth noticing. RSI near 70 = stretched, near 30 = washed out. Use 1M…All to change "
-          "the window, the mouse wheel to zoom, drag to pan, double-click to reset; the readout line shows values under "
-          "the cursor.",
-  use="See trend, momentum and volume at a glance before acting on any number in the tables.",
-  related=["sma", "rsi", "vol_ratio"], aliases=["chart_price", "daily (adjusted)"])
-
-# =====================================================================================================
-# News & analysts
-# =====================================================================================================
+          "volume = a trend change worth noticing. RSI near 70 = stretched, near 30 = washed out. Compare overlays "
+          "NIFTY or the sector rebased to the first visible bar: the stock above the line = beating it in this "
+          "window. Log scale makes equal percentage moves equal heights (use it for long histories). Use the range "
+          "buttons, the mouse wheel to zoom, drag to pan, double-click to reset; the readout shows values under the "
+          "cursor.",
+  use="See trend, momentum and volume at a glance before acting on any number in the tables, and check a trade "
+      "plan's stop and targets against recent swings.",
+  caveat="Indicators describe the past; none of them has a measured edge in this app on its own (see Backtest lab).",
+  related=["sma", "rsi", "vol_ratio", "vwap", "pivots_cpr", "fibonacci", "supertrend", "macd", "trade_plan"],
+  aliases=["chart_price", "daily (adjusted)", "weekly (adjusted)", "hourly", "5-minute", "1-minute", "15-minute"])
 E("finbert", "FinBERT sentiment score", "News & analysts",
   "A deep-learning score of how positive or negative a headline is, from −1 (very negative) to +1 (very positive).",
   how="FinBERT (ProsusAI/finbert), a BERT language model fine-tuned on financial text, gives each headline "

@@ -560,6 +560,7 @@ class ChartFrame(QWidget):
     def __init__(self, parent=None, default: str = "1Y"):
         super().__init__(parent)
         self.default = default
+        self.range_map = dict(RANGES)
         lay = QVBoxLayout(self)
         lay.setContentsMargins(0, 0, 0, 0)
         lay.setSpacing(2)
@@ -638,7 +639,7 @@ class ChartFrame(QWidget):
         if not self.plots or not self.dates:
             return
         n = len(self.dates)
-        off = dict(RANGES).get(name)
+        off = self.range_map.get(name)
         lo = 0
         if off is not None:
             start = pd.Timestamp(self.dates[-1]) - off
@@ -647,94 +648,6 @@ class ChartFrame(QWidget):
         for p in self.plots:
             if p.getViewBox().state["autoVisibleOnly"][1]:
                 p.enableAutoRange(axis="y")
-
-
-class PriceChart(ChartFrame):
-    """Candles + SMA50/200 + volume + RSI(14), one shared time axis."""
-
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        self.explain_key = "candle"
-
-    def plot(self, df: pd.DataFrame, title: str = "") -> None:
-        """df: Open/High/Low/Close/Volume indexed by date."""
-        self._reset_scene()
-        df = df.dropna(subset=["Close"])
-        self.title.setText(title)
-        if df.empty:
-            return
-        self.dates = list(df.index)
-        dates = self.dates
-        x = np.arange(len(df))
-        g = self.glw
-        p1 = g.addPlot(row=0, col=0)
-        p1.hideAxis("bottom")
-        p1.showGrid(x=True, y=True, alpha=0.15)
-        if df[["Open", "High", "Low"]].notna().all().all():
-            p1.addItem(CandleItem(df["Open"].to_numpy(), df["High"].to_numpy(), df["Low"].to_numpy(), df["Close"].to_numpy()))
-        else:
-            p1.plot(x, df["Close"].to_numpy(), pen=pg.mkPen(theme.AMBER, width=1.5))
-        for n, col in [(50, theme.BLUE), (200, "#C77DFF")]:
-            p1.plot(x, df["Close"].rolling(n).mean().to_numpy(), pen=pg.mkPen(col, width=1, style=Qt.DashLine))
-        p2 = g.addPlot(row=1, col=0)
-        p2.hideAxis("bottom")
-        p2.setMaximumHeight(80)
-        p2.getAxis("left").setStyle(showValues=False)        # volume: bars only, the readout shows the number
-        vol = df["Volume"].fillna(0).to_numpy() if "Volume" in df else np.zeros(len(df))
-        p2.addItem(pg.BarGraphItem(x=x, height=vol, width=0.7, brush=pg.mkBrush("#2A3442")))
-        p3 = g.addPlot(row=2, col=0, axisItems={"bottom": _DateAxis(dates)})
-        p3.setMaximumHeight(90)
-        d = df["Close"].diff()
-        up = d.clip(lower=0).ewm(alpha=1 / 14, adjust=False).mean()
-        dn = (-d.clip(upper=0)).ewm(alpha=1 / 14, adjust=False).mean()
-        rsi = 100 - 100 / (1 + up / dn.replace(0, np.nan))
-        p3.plot(x, rsi.to_numpy(), pen=pg.mkPen(theme.AMBER, width=1))
-        for lvl in (30, 70):
-            p3.addItem(pg.InfiniteLine(lvl, angle=0, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine)))
-        lines = [pg.InfiniteLine(angle=90, movable=False, pen=pg.mkPen(theme.MUTED, style=Qt.DotLine)) for _ in range(3)]
-        for p, ln in zip((p1, p2, p3), lines):
-            p.addItem(ln, ignoreBounds=True)
-        o, h, l, c = (df[k].to_numpy() if k in df else np.full(len(df), np.nan) for k in ("Open", "High", "Low", "Close"))
-        sma50 = df["Close"].rolling(50).mean().to_numpy()
-        rsi_v = rsi.to_numpy()
-
-        def moved(pos):
-            for p in (p1, p2, p3):
-                if p.sceneBoundingRect().contains(pos):
-                    i = int(round(p.vb.mapSceneToView(pos).x()))
-                    if 0 <= i < len(dates):
-                        for ln in lines:
-                            ln.setPos(i)
-                        chg = c[i] / c[i - 1] - 1 if i > 0 else np.nan
-                        self.readout.setText(
-                            f"<span style='color:{theme.TEXT}'>{dates[i]:%a %d %b %Y}</span> &nbsp; O {o[i]:,.2f} &nbsp; "
-                            f"H {h[i]:,.2f} &nbsp; L {l[i]:,.2f} &nbsp; C <b>{c[i]:,.2f}</b> "
-                            f"<span style='color:{theme.signed(chg)}'>{chg:+.2%}</span> &nbsp; Vol {vol[i]:,.0f} &nbsp; "
-                            f"SMA50 {sma50[i]:,.1f} &nbsp; RSI {rsi_v[i]:.0f} &nbsp;&nbsp; "
-                            f"<span style='color:{theme.MUTED}'>{HINT}</span>")
-                    return
-        self._connect("sigMouseMoved", moved)
-        lo_all = np.where(np.isfinite(l), l, c)
-        hi_all = np.where(np.isfinite(h), h, c)
-
-        def fit_y(*_):
-            (x0, x1), _ = p1.vb.viewRange()
-            a, b = max(0, int(np.floor(x0))), min(len(c), int(np.ceil(x1)) + 1)
-            if b - a < 2:
-                return
-            lo, hi = np.nanmin(lo_all[a:b]), np.nanmax(hi_all[a:b])
-            if np.isfinite(lo) and np.isfinite(hi) and hi > lo:
-                pad = (hi - lo) * 0.06
-                p1.setYRange(lo - pad, hi + pad, padding=0)
-            vmax = np.nanmax(vol[a:b]) if b > a else 0
-            p2.setYRange(0, max(vmax, 1) * 1.05, padding=0)
-        self._setup_nav([p1, p2, p3])
-        for p in (p1, p2, p3):
-            p.disableAutoRange(axis="y")
-            p.setAutoVisible(y=False)
-        p3.setYRange(0, 100, padding=0)
-        p1.sigXRangeChanged.connect(fit_y)
-        fit_y()
 
 
 class LineChart(ChartFrame):
@@ -795,3 +708,11 @@ def muted(text: str) -> QLabel:
     lab.setObjectName("muted")
     lab.setWordWrap(True)
     return lab
+
+
+def __getattr__(name: str):
+    """``PriceChart`` lives in pricechart.py (it builds on ChartFrame); re-exported lazily to avoid an import cycle."""
+    if name == "PriceChart":
+        from .pricechart import PriceChart
+        return PriceChart
+    raise AttributeError(name)
