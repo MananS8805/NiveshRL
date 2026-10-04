@@ -1110,6 +1110,31 @@ E("stcg", "Short-term capital gains tax (STCG)", "Desk",
       "year and carried forward 8 years.",
   caveat="Simplified, not tax advice: surcharge, your other gains and losses, and intraday (speculative) trades taxed at "
          "your slab are not included.", related=["scenario_pnl"], aliases=["Tax ₹", "STCG"])
+E("custom_alerts", "Alert rules", "Desk",
+  "Your own conditions on a NIFTY 200 stock, checked every 15 seconds: price at or above/below a level, the day's move, "
+  "price above/below its N-day average, RSI(14), today's volume vs its 20-day average, or a new 52-week high/low. Each "
+  "fires a Windows notification and is logged; 'once' rules then switch off, 'once a day' rules re-arm the next day.",
+  how="Uses the live stream during market hours (today's live price stands in for today's close in the SMA, RSI and "
+      "52-week checks); when the market is closed, the last close. A rule whose input is unavailable (e.g. no live "
+      "volume) never fires.",
+  use="Lets the app watch levels from your trade plan (entry, stop, targets) so you do not have to.",
+  caveat="The Yahoo stream can lag or drop; an alert is a prompt to look, not an execution. Nothing is ordered.",
+  related=["alerts", "paper_trading"], aliases=["Rule", "Repeat", "Status", "Last fired", "Now", "Your rules"])
+E("paper_trading", "Paper trading", "Desk",
+  "A pretend delivery account in My desk (starting from your desk capital) where you place orders by hand and they "
+  "fill against the live stream: market orders at the next live price plus half the spread, limit buys when the price "
+  "trades at or below the limit. A buy can carry a stop and a target that close the whole position.",
+  how="A stop fills at the live price that crossed it (so a gap fills worse than the stop, as in real life); a target at "
+      "the target or better. Round-trip delivery costs come from configs/costs_india.yaml. R uses the stop set at entry.",
+  use="Practise following the trade plan (sizing, stops, not moving targets) and build a record in R before risking "
+      "money. 'Paper trade this plan' on a stock page fills the ticket from its swing plan.",
+  caveat="Paper fills are kinder than real ones (no queue, no partial fills, no slippage beyond half the spread) and "
+         "there is no emotional cost. Orders placed while the market is closed wait for the next live price. Nothing "
+         "is ever sent to a broker.",
+  related=["trade_plan", "r_multiple", "journal", "custom_alerts"],
+  aliases=["Paper equity", "Paper cash", "Unrealised P&L", "Realised P&L", "Closed paper trades", "Side", "Type",
+           "Limit", "Target", "Placed", "Avg", "P&L ₹", "P&L %", "Open R", "Opened", "Closed", "Reason", "Entry", "Exit",
+           "Order ticket", "Open orders", "Positions", "Closed paper trades"])
 E("watchlist_tier", "Watchlist tier", "Desk", "★ Must have = your highest-priority stocks; ☆ Preferred = on your radar.",
   aliases=["Tier"], related=["alerts"])
 E("alerts", "Watchlist alerts", "Desk",

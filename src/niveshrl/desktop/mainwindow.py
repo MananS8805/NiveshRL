@@ -25,9 +25,10 @@ from PySide6.QtWidgets import (QCompleter, QHBoxLayout, QLabel, QLineEdit, QList
 from .. import watchlist as wl
 from ..livefeed import IST, Feed, market_open
 from . import data, theme
-from .panels import Panel, vbox
+from .panels import Panel
 from .explain import ExplainPanel
 from .panels.agent import AgentPanel
+from .panels.alerts import AlertsPanel, stock_snapshot
 from .panels.track import TrackPanel
 from .panels.desk import DeskPanel
 from .panels.glossary import GlossaryPanel
@@ -51,6 +52,7 @@ class AppContext(QObject):
     watchlist_changed = Signal()
     daily_updated = Signal()
     alert = Signal(str, str)                  # (title, message)
+    goto = Signal(str, str)                   # (screen code, ticker): e.g. 'Set alert' / 'Paper trade' on a stock
 
     def __init__(self):
         super().__init__()
@@ -106,37 +108,6 @@ class TickerStrip(QWidget):
             self.doc.drawContents(p)
             p.restore()
             x += w
-
-
-class AlertsPanel(Panel):
-    title = "Alerts"
-    code = "ALRT"
-
-    def __init__(self, ctx, parent=None):
-        super().__init__(ctx, parent)
-        lay = vbox(self)
-        lay.addWidget(QLabel("Watchlist alerts appear here (newest first) and as Windows notifications: price at your "
-                             "buy/sell target, a ±3% day move, a news-sentiment flip, results within 7 days, or a stock "
-                             "entering/leaving tomorrow's top list. Each alert fires once per day. Double-click one to "
-                             "open the stock."))
-        lay.itemAt(0).widget().setWordWrap(True)
-        lay.itemAt(0).widget().setObjectName("muted")
-        self.list = QListWidget()
-        self.empty = QListWidgetItem("No alerts yet today. Add stocks to your Watchlist (with optional buy/sell targets) "
-                                     "to get alerts.")
-        self.list.addItem(self.empty)
-        lay.addWidget(self.list)
-        self.list.itemDoubleClicked.connect(lambda it: it.data(Qt.UserRole) and self.stock_selected.emit(it.data(Qt.UserRole)))
-
-    def add(self, ticker: str, text: str) -> None:
-        if self.empty is not None:
-            self.list.takeItem(self.list.row(self.empty))
-            self.empty = None
-        it = QListWidgetItem(f"{datetime.now(IST):%H:%M:%S}  {ticker.replace('.NS', ''):<12} {text}")
-        it.setData(Qt.UserRole, ticker if ticker.endswith(".NS") else None)
-        self.list.insertItem(0, it)
-        while self.list.count() > 500:                    # bounded
-            self.list.takeItem(self.list.count() - 1)
 
 
 PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
@@ -297,6 +268,10 @@ class MainWindow(QMainWindow):
         self.t_alerts = QTimer(self)
         self.t_alerts.setInterval(60_000)
         self.t_alerts.timeout.connect(self._check_alerts)
+        self.t_rules = QTimer(self)
+        self.t_rules.setInterval(15_000)
+        self.t_rules.timeout.connect(self._check_rules)
+        self.ctx.goto.connect(self._goto)
         self.t_house = QTimer(self)
         self.t_house.setInterval(10 * 60_000)
         self.t_house.timeout.connect(self._housekeeping)
@@ -320,6 +295,7 @@ class MainWindow(QMainWindow):
         self._refresh_strip()
         self.t_tick.start()
         self.t_alerts.start()
+        self.t_rules.start()
         QTimer.singleShot(5000, self._check_alerts)
         log.info("panel ready: %d tickers, last date %s", len(p.tickers), p.close.index[-1].date())
 
@@ -475,6 +451,44 @@ class MainWindow(QMainWindow):
                  self.proc.memory_info().rss / 2 ** 20, data.cache_size(),
                  self.ctx.feed.n_msgs if self.ctx.feed else 0, self.ctx.feed_restarts)
 
+    def _goto(self, code: str, ticker: str) -> None:
+        if code == "ALRT":
+            self.show_panel("ALRT")
+            q = self.ctx.feed.quote(ticker) if self.ctx.feed else None
+            p = data.panel()
+            price = q["price"] if q else float(p.close[ticker].dropna().iloc[-1]) if ticker in p.close else None
+            self.panels["ALRT"].prefill(ticker, price)
+        elif code == "PAPER":
+            self.show_panel("DESK")
+            desk = self.panels["DESK"]
+            desk.tabs.setCurrentWidget(desk.paper)
+            desk.paper.prefill(ticker)
+
+    def _check_rules(self) -> None:
+        """Your alert rules and the paper account, every 15 s (cheap: a few stocks)."""
+        if self.base is None:
+            return
+        from .. import custom_alerts as CA
+        try:
+            rules = CA.load()
+            fired, changed = CA.check(rules, lambda t: stock_snapshot(self.ctx.feed, t))
+            if changed:
+                CA.save(rules)
+            for r, msg in fired:
+                self.panels["ALRT"].add(r.ticker, msg)
+                self.ctx.alert.emit(f"NiveshRL alert · {r.ticker.replace('.NS', '')}", msg)
+                log.info("rule alert %s: %s", r.ticker, msg)
+            CA.log([(r.ticker, m) for r, m in fired])
+            if fired and self.current == "ALRT":
+                self.panels["ALRT"].refresh()
+            events = self.panels["DESK"].paper.process()
+            for e in events:
+                self.panels["ALRT"].add("PAPER", e)
+                self.ctx.alert.emit("NiveshRL paper trade", e)
+            CA.log([("PAPER", e) for e in events])
+        except Exception:
+            log.exception("rule/paper check failed")
+
     def _check_alerts(self) -> None:
         if self.base is None:
             return
@@ -560,7 +574,7 @@ class MainWindow(QMainWindow):
 
     def shutdown(self) -> None:
         self.save_layout()
-        for t in (self.t_tick, self.t_status, self.t_alerts, self.t_house, self.t_watch, self.strip.timer):
+        for t in (self.t_tick, self.t_status, self.t_alerts, self.t_rules, self.t_house, self.t_watch, self.strip.timer):
             t.stop()
         if self.ctx.feed is not None:
             self.ctx.feed.stop()

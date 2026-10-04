@@ -82,7 +82,11 @@ class StockPanel(Panel):
         self.b_must.clicked.connect(lambda: self._wl("must"))
         self.b_pref.clicked.connect(lambda: self._wl("preferred"))
         self.b_rm.clicked.connect(lambda: self._wl(None))
-        for w in (self.wl_label, self.b_must, self.b_pref, self.b_rm):
+        self.b_alert = QPushButton("🔔 Set alert")
+        self.b_alert.clicked.connect(lambda: self.ticker and self.ctx.goto.emit("ALRT", self.ticker))
+        self.b_paper = QPushButton("Paper trade this plan")
+        self.b_paper.clicked.connect(lambda: self.ticker and self.ctx.goto.emit("PAPER", self.ticker))
+        for w in (self.wl_label, self.b_must, self.b_pref, self.b_rm, self.b_alert, self.b_paper):
             wrow.addWidget(w)
         wrow.addStretch(1)
         lay.addLayout(wrow)

@@ -1,4 +1,4 @@
-"""DESK: capital planner, your holdings (Kite CSV) with exit lines, and your trade journal."""
+"""DESK: capital planner, your holdings (Kite CSV) with exit lines, your trade journal and paper trading."""
 from __future__ import annotations
 
 from datetime import date
@@ -156,6 +156,9 @@ class DeskPanel(Panel):
                            "never feeds any model or screen."))
         self.tabs.addTab(jw, "Journal")
         self._sel_trade = None
+        from .paper import PaperTab
+        self.paper = PaperTab(ctx, lambda t: self.stock_selected.emit(t))
+        self.tabs.addTab(self.paper, "Paper trading")
 
     def _save_settings(self) -> None:
         s = _S()
@@ -179,6 +182,7 @@ class DeskPanel(Panel):
         self._planner(rs, st)
         self._holdings()
         self._journal()
+        self.paper.refresh()
 
     def _candidates(self) -> list[str]:
         src = self.source.currentData()

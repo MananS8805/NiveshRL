@@ -36,3 +36,7 @@ data/intraday/
 data/nifty200_pit_panel.parquet
 data/bhav/
 data/charts/
+data/alerts.json
+data/alerts_log.json
+data/paper.json
+data/*.tmp
