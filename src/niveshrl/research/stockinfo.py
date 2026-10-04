@@ -261,7 +261,10 @@ def cone_sigma(ticker: str, vol_forecasts: pd.DataFrame | None, table: pd.DataFr
 
 def yahoo_events(ticker: str) -> dict:
     """Earnings dates (with EPS estimate/actual/surprise) and dividends from Yahoo; each part may be None if unavailable."""
+    import logging
+
     import yfinance as yf
+    logging.getLogger("yfinance").setLevel(logging.CRITICAL)   # 'no earnings dates' is reported below, not logged
     t = yf.Ticker(ticker)
     out = {"earnings": None, "dividends": None, "errors": []}
     try:
