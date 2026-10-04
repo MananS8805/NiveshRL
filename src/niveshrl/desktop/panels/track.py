@@ -140,6 +140,8 @@ class TrackPanel(Panel):
             pred = pd.read_parquet(ROOT / "data" / "predictions" / "nextday_pit.parquet")
             df, _ = F.historical_monitor(p, pred)
             df.to_parquet(HIST)
+            from ...research.tradecheck import build_tagged
+            build_tagged(p, df)                     # 'similar setups' on the stock page read this
             return True
         run_async(work, lambda _: (self.recompute.setEnabled(True), self._show_history()),
                   on_error=lambda m: self.recompute.setEnabled(True))

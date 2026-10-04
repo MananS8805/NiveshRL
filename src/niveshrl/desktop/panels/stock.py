@@ -12,6 +12,7 @@ from PySide6.QtWidgets import (QHBoxLayout, QLabel, QPushButton, QTabWidget, QTe
 from ... import watchlist as wl
 from ...research import fundamentals as fx
 from ...research import stockinfo as SI
+from ...research import tradecheck as TC
 from ...research.screener import COLUMNS as SCR_COLS
 from ...research.technicals import TECH_COLUMNS
 from .. import data, theme
@@ -97,8 +98,7 @@ class StockPanel(Panel):
         sl.addWidget(self.stats)
         sl.addStretch(1)
         self.tabs.addTab(sw, "Key stats")
-        self.plan_view = QTextBrowser()
-        self.tabs.addTab(self.plan_view, "Trade plan")
+        self._build_plan_tab()
         self._build_peers()
         self._build_events()
         self._build_risk()
@@ -560,13 +560,50 @@ class StockPanel(Panel):
                          "Signal": "" if missing or k not in SIGNALS else SIGNALS[k](v)})
         self.tech.set_frame(pd.DataFrame(rows))
 
+    def _build_plan_tab(self) -> None:
+        w = QWidget()
+        lay = QVBoxLayout(w)
+        row = QHBoxLayout()
+        row.addWidget(h2("Pre-entry checklist", "checklist"))
+        row.addStretch(1)
+        row.addWidget(ExplainButton("checklist"))
+        lay.addLayout(row)
+        self.check_view = QTextBrowser()
+        self.check_view.setMinimumHeight(250)
+        lay.addWidget(self.check_view)
+        self.plan_view = QTextBrowser()
+        self.plan_view.setMinimumHeight(330)
+        lay.addWidget(self.plan_view)
+        lay.addWidget(h2("Scenarios: what each ending is worth after costs and tax", "scenario_pnl"))
+        self.scen = FrameTable(fmt={"Exit price": "₹{:,.2f}", "Gross ₹": "{:+,.0f}", "Costs ₹": "{:,.0f}",
+                                    "Tax ₹": "{:,.0f}", "Net ₹": "{:+,.0f}", "Net R": "{:+.2f}",
+                                    "% of capital": "{:+.2%}"}, signed={"Gross ₹", "Net ₹", "Net R", "% of capital"})
+        self.scen.model_.term_overrides = {c: "scenario_pnl" for c in ("Exit price", "Gross ₹", "Costs ₹", "Net ₹",
+                                                                        "Net R", "% of capital")}
+        self.scen.model_.term_overrides["Tax ₹"] = "stcg"
+        self.scen.setMinimumHeight(210)
+        lay.addWidget(self.scen)
+        lay.addWidget(h2("What happened to similar past setups", "similar_setups"))
+        self.sim_note = muted("")
+        lay.addWidget(self.sim_note)
+        self.sim_kpi = KpiRow(cols=5)
+        lay.addWidget(self.sim_kpi)
+        self.sim_hist = FrameTable(fmt={"Similar setups": "{:.0%}", "All trades": "{:.0%}"})
+        self.sim_hist.model_.term_overrides = {c: "similar_setups" for c in ("Similar setups", "All trades", "")}
+        self.sim_hist.setMinimumHeight(300)
+        lay.addWidget(self.sim_hist)
+        self.tabs.addTab(scrolling(w), "Trade plan")
+
     def _plan(self) -> None:
         from ...research.plans import make_plan
         from .desk import current_risk_state, desk_settings
         st, rs = desk_settings(), current_risk_state()
-        pl = make_plan(data.panel(), self.ticker, st["capital"], st["risk_pct"], rs.multiplier)
+        p = data.panel()
+        pl = make_plan(p, self.ticker, st["capital"], st["risk_pct"], rs.multiplier)
         if pl is None:
             self.plan_view.setHtml("<p>Not enough price history for a plan.</p>")
+            self.check_view.setHtml("")
+            self.scen.set_frame(pd.DataFrame())
             return
         A, M = theme.AMBER, theme.MUTED
         rows = [("Entry (last close)", f"₹{pl.entry:,.2f}", "you'd buy at the next open"),
@@ -585,7 +622,53 @@ class StockPanel(Panel):
             f"<p><b style='color:{A}'>Market risk state:</b> {rs.state} (×{rs.multiplier:g}): {'; '.join(rs.reasons)}</p>"
             + (f"<ul>{notes}</ul>" if notes else "")
             + f"<p style='color:{M}'>Capital and risk % are set in My desk. Rules, not a forecast or advice; nothing is "
-              "ordered. Gaps can fill beyond the stop.</p>")
+              "ordered. Gaps can fill beyond the stop. The plan is also drawn on the Chart tab.</p>")
+        # scenarios
+        self.scen.set_frame(TC.scenarios(pl))
+        # similar setups
+        hist = data.tagged_history()
+        now = TC.tags_now(p, self.ticker)
+        sim = TC.similar_setups(hist, now) if hist is not None else None
+        self.sim_kpi.ticker = self.ticker
+        if sim is not None and sim.n:
+            s, b = sim.stats, sim.baseline
+            desc = ", ".join(f"{TC.TAG_LABELS[k]}: {now[k]}" for k in sim.used)
+            self.sim_note.setText(
+                f"Trades that started like {self.ticker.replace('.NS', '')} today ({desc})"
+                + (f"; ignoring {', '.join(TC.TAG_LABELS[k] for k in sim.dropped)} to get at least 30" if sim.dropped else "")
+                + f". From the point-in-time replay of these exact plan rules, 2015-2026, after costs: {s['n']:,} of "
+                  f"{b['n']:,} trades in any NIFTY 200 stock, not this stock's own history.")
+            self.sim_kpi.set_items([
+                ("Similar trades", f"{s['n']:,}", None, f"of {b['n']:,}"),
+                ("Win rate", f"{s['win_rate']:.0%}", None, f"all trades {b['win_rate']:.0%}"),
+                ("Average R", f"{s['avg_r']:+.2f}R", theme.signed(s["avg_r"]), f"all trades {b['avg_r']:+.2f}R · t {s['t']:.1f}"),
+                ("Median R", f"{s['median_r']:+.2f}R", theme.signed(s["median_r"]), "the typical trade"),
+                ("Average days held", f"{s['avg_days']:.0f}", None, "max 60"),
+            ])
+            hs, hb = TC.r_histogram(sim.trades["r"]), TC.r_histogram(hist["r"])
+            self.sim_hist.set_frame(pd.DataFrame({"Similar setups": hs, "All trades": hb,
+                                                  "": ["█" * int(round(v * 60)) for v in hs]}).rename_axis("Outcome"))
+        else:
+            self.sim_note.setText("No replay history yet: open Track record and press Recompute, or run "
+                                  "scripts/tag_setups.py.")
+            self.sim_kpi.set_items([])
+            self.sim_hist.set_frame(pd.DataFrame())
+        # checklist
+        table = data.screener_table()
+        row = table.loc[self.ticker] if table is not None and self.ticker in table.index else None
+        dte = row.get("days_to_earnings") if row is not None else None
+        verdict, checks = TC.checklist(pl, rs, row, sim, dte)
+        col = {"Go": theme.GREEN, "Wait": theme.AMBER, "No-go": theme.RED}[verdict]
+        icon = {"ok": ("✓", theme.GREEN), "caution": ("!", theme.AMBER), "stop": ("✖", theme.RED)}
+        items = "".join(f"<tr><td style='color:{icon[c.status][1]};padding:2px 8px'><b>{icon[c.status][0]}</b></td>"
+                        f"<td style='padding:2px 8px'><b>{c.item}</b></td><td style='color:{M};padding:2px 8px'>{c.detail}"
+                        f"</td></tr>" for c in checks)
+        self.check_view.setHtml(
+            f"<p style='font-size:16px'>Verdict: <b style='color:{col}'>{verdict}</b> "
+            f"<span style='color:{M};font-size:11px'>Go = no more than one caution · Wait = two or more cautions · "
+            f"No-go = a blocking problem</span></p><table>{items}</table>"
+            f"<p style='color:{M}'>A checklist of the rules this app uses, to slow down an impulsive entry. Not advice; "
+            "the cautions are reasons to look closer, not predictions.</p>")
 
     def _models(self) -> None:
         t = self.ticker

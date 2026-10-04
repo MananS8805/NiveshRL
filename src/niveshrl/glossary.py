@@ -1064,6 +1064,52 @@ E("market_habits", "Market habits", "Desk",
   use="Context for planning the day (e.g. 'the first hour set the day's direction 71% of recent sessions').",
   caveat="Historical tendencies, small edges, can change. Not signals.", aliases=["Market habits (NIFTY, measured from "
                                                                                     "history, not opinions)"])
+E("checklist", "Pre-entry checklist", "Desk",
+  "A Go / Wait / No-go verdict from the app's own rules before a swing entry: position size possible, market risk "
+  "state, the stock's long-term trend, results within 7 days, stop width, liquidity, whether it is stretched (RSI > 75 "
+  "or extended from its pivot), the model views, and how similar past setups turned out.",
+  how="No-go = a blocking problem (e.g. the capital cannot buy one share at this risk). Wait = two or more cautions. "
+      "Go = at most one caution.",
+  use="Slows down an impulsive entry and shows in one place what to look at. Most good entries have one caution or "
+      "none; buying with several is a decision to make consciously.",
+  caveat="The rules are simple and partly overlap. A Go is not a forecast that the trade will work; the replay's median "
+         "trade loses even when the average wins.", related=["trade_plan", "similar_setups", "risk_state"])
+E("similar_setups", "Similar past setups", "Desk",
+  "Closed trades from the point-in-time replay of the same swing-plan rules (2015-2026, ~9,000 trades in NIFTY 200 "
+  "stocks, model picks and random picks together) that started in the same context as this stock today: NIFTY above "
+  "or below its 200-day average, the stock above or below its own, its RSI(14) zone and how far it was from its "
+  "20-day high.",
+  how="If fewer than 30 trades match, the least important tag is dropped (market, then distance from the high, then "
+      "RSI zone) and the note says so. Outcomes are R after delivery costs: −1R ≈ the stop was hit.",
+  bands=[(-0.1, "worse than average", "trades like this lost on average"), (0.1, "about average", ""),
+         (INF, "better than average", "")],
+  use="Shows the realistic spread of outcomes for this kind of entry: how often it wins, how big the typical loss and "
+      "win are, and whether this context did better or worse than all trades.",
+  caveat="Similar context, not the same stock or the same chart. Hundreds of trades still carry noise (see the t-stat: "
+         "below 2 is not reliable). Past distributions shift with markets.",
+  related=["r_multiple", "forward_tracker", "checklist"],
+  aliases=["Similar trades", "Average days held", "Similar setups", "All trades", "Outcome",
+           "What happened to similar past setups"])
+E("scenario_pnl", "Trade scenarios", "Desk",
+  "The rupee result of each way the swing plan can end, for the planned quantity: stopped out, a gap 3% through the "
+  "stop, sold flat, T1 then stopped at entry, T1 then T2, and all at T2.",
+  how="Gross = (exit − entry) × shares, with a third sold at T1 where the plan says so. Costs = brokerage, STT, "
+      "exchange, SEBI, stamp duty, DP charge, GST and slippage (configs/costs_india.yaml). Tax = short-term capital "
+      "gains on a net gain. Net R = net ÷ (R × shares).",
+  use="Shows that a 'flat' trade still costs money, how much worse a gap is than the planned stop, and what costs and "
+      "tax take out of a win, before you decide whether the trade is worth it.",
+  caveat="Real fills differ; the gap scenario is an example, not the worst case.",
+  related=["trade_plan", "stcg", "r_multiple"],
+  aliases=["Exit price", "Gross ₹", "Costs ₹", "Net ₹", "Net R", "% of capital",
+           "Scenarios: what each ending is worth after costs and tax"])
+E("stcg", "Short-term capital gains tax (STCG)", "Desk",
+  "Tax on profits from listed shares held for 12 months or less (STT paid): 20% plus 4% cess = 20.8%, for sales from "
+  "23 July 2024. Held longer, gains are long-term (12.5% above ₹1.25 lakh a year).",
+  how="The scenario table applies 20.8% to a scenario's net gain; losses show no tax.",
+  use="A short-term winner keeps about 79% of its pre-tax profit. Losses can be set off against gains in the same "
+      "year and carried forward 8 years.",
+  caveat="Simplified, not tax advice: surcharge, your other gains and losses, and intraday (speculative) trades taxed at "
+         "your slab are not included.", related=["scenario_pnl"], aliases=["Tax ₹", "STCG"])
 E("watchlist_tier", "Watchlist tier", "Desk", "★ Must have = your highest-priority stocks; ☆ Preferred = on your radar.",
   aliases=["Tier"], related=["alerts"])
 E("alerts", "Watchlist alerts", "Desk",

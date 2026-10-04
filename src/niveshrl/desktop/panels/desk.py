@@ -192,6 +192,22 @@ class DeskPanel(Panel):
             out += [t for t, it in sorted(items.items(), key=lambda kv: kv[1].tier != "must")]
         return list(dict.fromkeys(out))
 
+    @staticmethod
+    def _verdict(p, t, st, rs) -> str:
+        """The stock page's pre-entry checklist verdict (Go / Wait / No-go) with its cautions, for the planner."""
+        from ...research import tradecheck as TC
+        try:
+            pl = P.make_plan(p, t, st["capital"], st["risk_pct"], rs.multiplier)
+            hist = data.tagged_history()
+            sim = TC.similar_setups(hist, TC.tags_now(p, t)) if hist is not None else None
+            table = data.screener_table()
+            row = table.loc[t] if table is not None and t in table.index else None
+            verdict, checks = TC.checklist(pl, rs, row, sim, row.get("days_to_earnings") if row is not None else None)
+        except (KeyError, IndexError, ValueError):
+            return "–"
+        flags = [c.item.lower() for c in checks if c.status != "ok"]
+        return verdict + (f" ({', '.join(flags)})" if flags else "")
+
     def _planner(self, rs, st) -> None:
         p = data.panel()
         cands = [t for t in self._candidates() if t in p.close.columns]
@@ -213,7 +229,8 @@ class DeskPanel(Panel):
             rows.append({"ticker": t, "Sector": sec, "Entry": r["entry"], "Stop": r["stop"], "Stop %": r["stop_pct"],
                          "T1": r["t1"], "T2": r["t2"], "Qty": r["qty"], "Amount": r["position_value"],
                          "₹ risk": r["rupee_risk"], "₹ at T1": r["qty"] * (r["t1"] - r["entry"]),
-                         "₹ at T2": r["qty"] * (r["t2"] - r["entry"]), "Notes": "; ".join(r["notes"])})
+                         "₹ at T2": r["qty"] * (r["t2"] - r["entry"]),
+                         "Checklist": self._verdict(p, t, st, rs), "Notes": "; ".join(r["notes"])})
         df = pd.DataFrame(rows).set_index("ticker") if rows else pd.DataFrame({"": ["Nothing fits the limits today."]})
         self.orders.set_frame(df)
         if rows:

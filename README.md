@@ -94,6 +94,8 @@ Stress. Plans appear on Today's watch list, on every stock page and in **My desk
 capital, at most 2 per sector), your **Kite holdings** imported from CSV with a ratcheting exit line (close − 3 × ATR;
 HOLD / EXIT / REVIEW), and a **journal** that scores your real trades in R after costs.
 
+**Understanding a trade** ([tradecheck.py](src/niveshrl/research/tradecheck.py)). The stock page's Trade plan tab adds a **pre-entry checklist** (Go / Wait / No-go from plain rules: size possible, market risk state, trend, results within 7 days, stop width, liquidity, stretched, model views, similar setups; also a column in My desk's planner), **scenarios** (₹ and R for stop, a gap through the stop, flat, T1 then breakeven, T1 then T2, after delivery costs and 20.8% STCG) and **similar past setups**: the closed trades of the point-in-time replay that started in the same context (NIFTY and the stock vs their 200-day averages, RSI zone, distance from the 20-day high), with their win rate, average and median R and the R distribution next to all trades.
+
 **Track record.** Every saved 'watch for strength' pick is followed with those rules (next open; a third booked at T1 and
 the stop moved to entry; the rest trailed 3 × ATR; 60-day cap; delivery costs) next to an equal random sample, forward as
 days accumulate, plus a historical replay on point-in-time members (result above). A FinBERT sentiment forward test

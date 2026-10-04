@@ -179,3 +179,16 @@ def cache_size() -> int:
 def stock_events(ticker: str) -> dict:
     from ..research import stockinfo
     return _cached(f"ev:{ticker}", 6 * 3600, lambda: stockinfo.yahoo_events(ticker))
+
+
+def tagged_history() -> pd.DataFrame | None:
+    """The swing-rule replay tagged with each trade's starting context (for 'similar past setups')."""
+    from ..research import tradecheck as TC
+
+    def build():
+        if TC.TAGGED.exists():
+            return pd.read_parquet(TC.TAGGED)
+        if TC.HISTORY.exists():                       # fall back to tagging with today's panel
+            return TC.tag_history(pd.read_parquet(TC.HISTORY), TC.context_tags(panel()))
+        return None
+    return _cached("tagged_hist", 3600, build)
