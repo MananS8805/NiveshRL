@@ -111,9 +111,22 @@ def main(argv: list[str] | None = None) -> int:
         tray.show()
     win.tray = tray
 
+    def bring_forward():
+        if tray:
+            tray.show_window()
+        else:
+            win.show()
+            win.raise_()
+            win.activateWindow()
+
     def on_conn():
-        c = server.nextPendingConnection()
-        c.readyRead.connect(lambda: tray.show_window() if tray else (win.show(), win.raise_()))
+        while server.hasPendingConnections():
+            c = server.nextPendingConnection()
+            # the second launch writes "show" and exits at once: the bytes (or the disconnect) can arrive before
+            # readyRead is connected, so act on any connection instead of waiting for a signal that never fires
+            c.readyRead.connect(lambda c=c: c.readAll())
+            c.disconnected.connect(c.deleteLater)
+            bring_forward()
     server.newConnection.connect(on_conn)
 
     if not (args.tray and tray):
