@@ -1,0 +1,12 @@
+{
+  "monthly_beats_yearly": false,
+  "monthly_vs_yearly_t": -1.338049514437853,
+  "stack_beats_monthly": false,
+  "stack_vs_monthly_t": -0.5648174325497634,
+  "models": [
+    "lgbm",
+    "seq",
+    "logreg"
+  ],
+  "period": "01 Jan 2025 \u2192 01 Oct 2026"
+}

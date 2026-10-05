@@ -86,13 +86,15 @@ def _fit(X: np.ndarray, seed: int = 0, epochs: int = 600) -> AE:
     return m.eval()
 
 
-def detect_regimes(p: Panel, first_year: int = 2010, seed: int = 0) -> pd.DataFrame:
+def detect_regimes(p: Panel, first_year: int = 2010, seed: int = 0, window_years: int | None = None) -> pd.DataFrame:
+    """``window_years=None``: expanding window (all history before Y); an int: only the last ``window_years``."""
     from sklearn.cluster import KMeans
 
     f = market_features(p)
     out = []
     for Y in sorted({d.year for d in f.index if d.year >= first_year}):
-        train = f.loc[f.index < pd.Timestamp(f"{Y}-01-01"), FEATS]
+        lo = pd.Timestamp(f"{Y - window_years}-01-01") if window_years else f.index[0]
+        train = f.loc[(f.index >= lo) & (f.index < pd.Timestamp(f"{Y}-01-01")), FEATS]
         test = f.loc[f.index.year == Y, FEATS]
         if len(train) < 104 or test.empty:
             continue

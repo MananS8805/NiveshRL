@@ -189,7 +189,7 @@ class Agent:
                 learned = self.bandit.update(sh, taken, self.cfg["learning"]["reward_bonus_r"] if hit else 0.0, day)
                 hist = pd.concat([self.history(), sh], ignore_index=True)
                 hist.to_parquet(self.root / "shadow.parquet")
-                self.scorer = Scorer().fit(hist, self.seed)
+                self.scorer = Scorer().fit(hist, self.seed, self.cfg["learning"].get("half_life_days"))
                 if self.scorer.ready:
                     self.scorer.save(self.root / "scorer.pkl")
             self.bandit.save(self.root / "bandit.json")

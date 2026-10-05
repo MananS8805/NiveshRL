@@ -117,8 +117,12 @@ class TodayPanel(Panel):
         hl.addLayout(hab, 1)
         hl.addWidget(muted("Day of week: mean NIFTY return and share of up days (hit). Use as context, not as a signal."))
         self.tabs.addTab(habw, "Market habits")
+        from .stacked_tab import StackedTab
+        self.stacked = StackedTab(lambda t: self.stock_selected.emit(t))
+        self.tabs.addTab(self.stacked, "Pattern changes")
 
     def refresh(self) -> None:
+        self.stacked.refresh()
         b, mon, hab = data.dload("briefing"), data.dload("monitor"), data.dload("habits")
         if b is None:
             self.story.setHtml("<p>No daily data yet. Press <b>F5</b> (or the tray menu → Refresh) to run the daily "

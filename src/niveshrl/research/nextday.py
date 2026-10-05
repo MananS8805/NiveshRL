@@ -150,6 +150,16 @@ class SeqNet:
 
         self.torch = torch
         self.net = Net()
+        self._args = (n_seq, n_tab, d, seed)
+
+    def __getstate__(self):
+        """Picklable: keep the constructor arguments and the weights, not the torch module or the local class."""
+        return {"args": self._args, "state": {k: v.detach().cpu() for k, v in self.net.state_dict().items()}}
+
+    def __setstate__(self, st):
+        self.__init__(*st["args"])
+        self.net.load_state_dict(st["state"])
+        self.net.eval()
 
     def fit(self, S, X, y, Sv, Xv, yv, epochs: int = 6, batch: int = 1024, lr: float = 1e-3):
         torch = self.torch

@@ -31,7 +31,8 @@ class Scorer:
     def ready(self) -> bool:
         return self.model is not None
 
-    def fit(self, hist: pd.DataFrame, seed: int = 0) -> "Scorer":
+    def fit(self, hist: pd.DataFrame, seed: int = 0, half_life_days: float | None = None) -> "Scorer":
+        """``half_life_days``: weight each day's outcomes by 0.5 ** (trading days ago / half-life)."""
         hist = hist.dropna(subset=["win"])
         if len(hist) < MIN_ROWS or hist["win"].nunique() < 2:
             return Scorer(None, len(hist))
@@ -39,7 +40,12 @@ class Scorer:
         m = lgb.LGBMClassifier(n_estimators=200, learning_rate=0.03, num_leaves=15, min_child_samples=30,
                                subsample=0.8, subsample_freq=1, colsample_bytree=0.8, reg_lambda=1.0,
                                random_state=seed, verbose=-1)
-        m.fit(matrix(hist), hist["win"].to_numpy())
+        w = None
+        if half_life_days and "day" in hist:
+            days = pd.to_datetime(hist["day"])
+            age = days.map({d: i for i, d in enumerate(sorted(days.unique(), reverse=True))}).to_numpy(dtype=float)
+            w = 0.5 ** (age / float(half_life_days))
+        m.fit(matrix(hist), hist["win"].to_numpy(), sample_weight=w)
         return Scorer(m, len(hist))
 
     def prob(self, feats: dict) -> float:

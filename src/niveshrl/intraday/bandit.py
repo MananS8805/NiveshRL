@@ -8,6 +8,8 @@ bucket with ≥ ``min_trades_bucket`` outcomes decides:
 - **HALF** when a draw from the posterior of its average R is below ``half_below_r``;
 - **TAKE** otherwise, and while there is not yet enough history (exploration, within the fixed guardrails).
 On days the pool ends ≥ +10% (the user's target) each trade taken that day earns a bonus in its buckets.
+With ``half_life_days`` set, every bucket's statistics fade by half over that many trading days before each new day
+is added (effective counts), so the bandit follows changes in the market instead of averaging over all history.
 The bandit only chooses among signals and sizes 0 / ½ / 1; it can never raise risk above the guardrails.
 """
 from __future__ import annotations
@@ -40,7 +42,7 @@ class Bandit:
     # ------------------------------------------------------------------ decisions
     def _summary(self, k: str):
         n, s, s2 = self.stats.get(k, [0, 0.0, 0.0])
-        if n < 2:
+        if n < 2:                                           # n is an effective (possibly fractional) count
             return n, float("nan"), float("nan"), float("nan")
         mean = s / n
         var = max(s2 / n - mean * mean, 1e-6) * n / (n - 1)
@@ -75,9 +77,14 @@ class Bandit:
     # ------------------------------------------------------------------ learning
     def update(self, shadow: pd.DataFrame, taken_keys: set | None = None, bonus: float = 0.0, day: str = "") -> list[dict]:
         """Add a day's shadow outcomes; returns the learning-log entries for buckets whose policy changed."""
+        before = {k: self.policy(k) for k in self.stats}
+        hl = self.lc.get("half_life_days")
+        if hl:                                               # one trading day of forgetting, signals or not
+            f = 0.5 ** (1.0 / float(hl))
+            for st in self.stats.values():
+                st[0], st[1], st[2] = st[0] * f, st[1] * f, st[2] * f
         if shadow is None or shadow.empty:
             return []
-        before = {k: self.policy(k) for k in self.stats}
         for _, r in shadow.iterrows():
             f = r.to_dict()
             reward = float(r["net_r"])

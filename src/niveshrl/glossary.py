@@ -1301,6 +1301,44 @@ E("pnl_calendar", "Realised P&L calendar", "Desk",
   use="Shows streaks and seasonality in your own results: are losses clustered after big wins? Did one month make or "
       "break the year?", related=["cg_tax", "journal"],
   aliases=["Realised P&L by month (₹, FIFO, before costs)"])
+E("stacked_model", "Stacked next-day model", "Model outputs",
+  "Four models predict tomorrow at the close: LightGBM and a sequence network (P(the stock beats tomorrow's median "
+  "return)), a logistic regression (a stable linear view of the same), and the range model (how big tomorrow's "
+  "high-low range may be). A fifth, 'meta' model learns how much to trust each and outputs one stacked P(up).",
+  how="Base models are refit at the start of every month on the last 4 years up to 3 months before, and calibrated on "
+      "those 3 months (the sequence net every quarter, because it is slow on a CPU). The meta model is a logistic "
+      "regression over each base model's daily rank (plus direction × range), trained only on the base models' previous "
+      "12 months of out-of-sample predictions, so it never sees a prediction a base model made on its own training data. "
+      "The columns 'LightGBM … Range model' show each base model's rank today (100% = most bullish / most volatile).",
+  bands=[(0.47, "Down", "below-median day expected"), (0.53, "Flat", "no clear view"), (INF, "Up", "")], unit="pct",
+  use="One combined view per stock each evening, and a list of stocks whose outlook changed, to decide what to look at "
+      "before tomorrow's open.",
+  caveat="Next-day returns are mostly noise: even good models are right only slightly more than half the time, and the "
+         "top picks lose after trading costs in this app's own tests. Its measured record is in "
+         "report/results/refit_comparison.md. A forecast, not advice.",
+  related=["p_up", "range_model", "pattern_change", "model_health"],
+  aliases=["Stocks scored", "Up patterns", "Down patterns", "Heaviest meta weight", "LightGBM", "Sequence net",
+           "Logistic", "Range model", "Stacked", "Pattern changes",
+           "Stacked next-day model: pattern changes since the last close",
+           "All stocks: stacked P(up), pattern and each model's vote"])
+E("pattern_change", "Pattern change", "Model outputs",
+  "A stock's stacked pattern = direction (Up when stacked P(up) ≥ 53%, Down ≤ 47%, else Flat) × expected size "
+  "(volatile = top 30% of predicted ranges, quiet = bottom 30%, else normal). A change is any difference from the "
+  "previous close; a notable change is a direction flip (Up↔Down) or a size jump (quiet↔volatile).",
+  use="Highlights stocks whose outlook moved overnight, e.g. 'Down · quiet → Up · volatile' (the models now expect a "
+      "large up-move): candidates to check on the chart and the trade plan.",
+  caveat="Many small changes are just noise around the thresholds; the notable ones and a large Δ P(up) matter more.",
+  related=["stacked_model"], aliases=["Notable changes", "Pattern now", "Pattern before", "P(up) now", "P(up) before",
+                                      "Δ P(up)", "Change", "Notable changes tonight"])
+E("model_health", "Model health (drift monitor)", "Model quality",
+  "Each model's rank correlation (IC) between its prediction and the next day's actual returns, averaged over the "
+  "last 60 trading days.",
+  bands=[(0.0, "no skill / wrong way", "ignore the model for now"), (0.03, "weak", ""), (INF, "useful", "")],
+  reading="Watch the trend, not single days: a model whose line falls below its own usual range is drifting (the "
+          "market changed in a way it has not learned). The app flags a model whose latest value is below its own 10th "
+          "percentile.", use="Tells you when to trust the stacked view less.", related=["ic", "stacked_model"],
+  aliases=["Rolling 60-day rank IC with next-day returns (higher = better; 0 = no skill)",
+           "Model health: rolling 60-day skill (rank IC with next-day returns)"])
 E("watchlist_tier", "Watchlist tier", "Desk", "★ Must have = your highest-priority stocks; ☆ Preferred = on your radar.",
   aliases=["Tier"], related=["alerts"])
 E("alerts", "Watchlist alerts", "Desk",

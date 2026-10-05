@@ -30,7 +30,7 @@ New-Item -ItemType Directory -Force (Join-Path $Seed "data") | Out-Null
 foreach ($f in @("ind_nifty200list.csv", "nifty200_panel.parquet", "nifty200_context.parquet", "stocks.parquet", "context.parquet")) {
     if (Test-Path "data\$f") { Copy-Item "data\$f" (Join-Path $Seed "data\$f") }
 }
-foreach ($d in @("predictions", "daily", "constituents")) { if (Test-Path "data\$d") { Copy-Item -Recurse "data\$d" (Join-Path $Seed "data\$d") } }
+foreach ($d in @("predictions", "daily", "constituents", "models")) { if (Test-Path "data\$d") { Copy-Item -Recurse "data\$d" (Join-Path $Seed "data\$d") } }
 # intraday agent: the liquid universe and the replay's learning (warm start + the Replay tab); not the 5-minute bars
 New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\replay") | Out-Null
 if (Test-Path "data\intraday\universe.csv") { Copy-Item "data\intraday\universe.csv" (Join-Path $Seed "data\intraday\universe.csv") }

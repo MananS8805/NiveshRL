@@ -51,3 +51,5 @@ learning:
   skip_t: -2.0                    # SKIP only when the bucket's t-stat is below this
   ml_min_prob: 0.40               # ML scorer: below this P(target before stop) -> SKIP
   verdict_after_trades: 100       # no performance verdict is shown before this many closed trades
+  half_life_days: 20              # forgetting: outcomes fade by half over 20 trading days (null = never). Replay
+                                  # Jul-Oct 2026: avg R -0.12 vs -0.17 remembering everything (52 days: weak evidence)

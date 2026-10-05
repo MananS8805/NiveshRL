@@ -35,27 +35,36 @@ ANN = np.sqrt(252)
 VOL_MODELS = ["hist", "ewma", "garch", "lstm"]
 
 
-def build_vol_data(p: Panel) -> tuple[pd.DataFrame, np.ndarray]:
-    """Rows (date, ticker): static features + target. Plus a sequence array (n, L, 2)."""
+def build_vol_data(p: Panel, live: bool = False) -> tuple[pd.DataFrame, np.ndarray]:
+    """Rows (date, ticker): static features + target. Plus a sequence array (n, L, 2).
+
+    ``live=True`` also returns rows whose next 21 days have not happened yet (the latest month-end(s) and the last
+    trading day) with ``rv_next`` = NaN, so a forecast can be made for *now*. Without it, the newest forecast is
+    always at least a month old, because a month-end only gets a row once its future is known."""
     r = p.returns()
     me = p.month_ends()
+    if live and r.index[-1] not in me:
+        me = me.append(pd.DatetimeIndex([r.index[-1]]))
     pos = r.index.get_indexer(me)
     bench_vol = np.log(p.bench).diff().rolling(20).std() * ANN
     rows, seqs = [], []
     R = r.to_numpy()
     for i, t in enumerate(me):
         k = pos[i]
-        if k < 70 or k + H >= len(r):
+        has_future = k + H < len(r)
+        if k < 70 or (not has_future and not live):
             continue
         past = R[k - L + 1:k + 1]                  # (L, N)
-        fut = R[k + 1:k + 1 + H]
-        ok = (np.isfinite(past).sum(0) >= L - 3) & (np.isfinite(fut).sum(0) >= H - 3)
+        fut = R[k + 1:k + 1 + H] if has_future else np.full((H, R.shape[1]), np.nan)
+        ok = (np.isfinite(past).sum(0) >= L - 3) & ((np.isfinite(fut).sum(0) >= H - 3) | (not has_future))
         if ok.sum() < 20:
             continue
         cols = np.flatnonzero(ok)
         past_c = np.nan_to_num(past[:, cols])
         fut_c = fut[:, cols]
-        rv_next = np.nanstd(fut_c, axis=0, ddof=0) * ANN
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore", RuntimeWarning)
+            rv_next = np.nanstd(fut_c, axis=0, ddof=0) * ANN if has_future else np.full(len(cols), np.nan)
         rv21 = past_c[-21:].std(0) * ANN
         rv63 = np.nanstd(R[k - 62:k + 1, cols], axis=0) * ANN
         df = pd.DataFrame({
@@ -63,7 +72,7 @@ def build_vol_data(p: Panel) -> tuple[pd.DataFrame, np.ndarray]:
             "vix": float(p.vix.iloc[k]) / 100 if np.isfinite(p.vix.iloc[k]) else 0.18,
             "mkt_vol": float(bench_vol.iloc[k]) if np.isfinite(bench_vol.iloc[k]) else 0.18,
         }, index=pd.MultiIndex.from_product([[t], r.columns[cols]], names=["date", "ticker"]))
-        keep = ((df["rv_next"] > 0) & (df["rv21"] > 0)).to_numpy()   # drop frozen/zero-vol rows
+        keep = (((df["rv_next"] > 0) | df["rv_next"].isna()) & (df["rv21"] > 0)).to_numpy()   # drop frozen rows
         rows.append(df[keep])
         seqs.append(np.stack([past_c.T * 100, np.abs(past_c.T) * 100], -1)[keep])   # (n, L, 2), in %
     return pd.concat(rows), np.concatenate(seqs)
@@ -140,18 +149,36 @@ def _static(frame: pd.DataFrame) -> np.ndarray:
                             frame["vix"], frame["mkt_vol"]]).astype(np.float32)
 
 
+def _periods(dates: pd.DatetimeIndex, first_year: int, refit: str, window_years: int):
+    """(train, validation, test) masks per refit period. 'yearly': test year Y, train [Y-w, Y-1), validate Y-1.
+    'monthly': test month M, train the window up to 13 months before M, validate the 12 months before M (minus the
+    last month, whose 21-day targets end inside M)."""
+    if refit == "yearly":
+        for Y in sorted({d.year for d in dates if d.year >= first_year}):
+            yield ((dates >= pd.Timestamp(f"{Y - window_years}-01-01")) & (dates < pd.Timestamp(f"{Y - 1}-01-01")),
+                   (dates >= pd.Timestamp(f"{Y - 1}-01-01")) & (dates < pd.Timestamp(f"{Y}-01-01")), dates.year == Y, Y)
+        return
+    months = pd.period_range(pd.Timestamp(f"{first_year}-01-01"), dates.max(), freq="M").to_timestamp()
+    for M in months:
+        v_end = M - pd.DateOffset(months=1)                     # targets of rows dated before this are known by M
+        v0 = M - pd.DateOffset(months=13)
+        yield ((dates >= M - pd.DateOffset(years=window_years)) & (dates < v0), (dates >= v0) & (dates < v_end),
+               (dates >= M) & (dates < M + pd.DateOffset(months=1)), f"{M:%Y-%m}")
+
+
 def lstm_forecast(frame: pd.DataFrame, seq: np.ndarray, first_year: int, window_years: int = 8,
-                  epochs: int = 30, seed: int = 0, verbose: bool = True) -> pd.Series:
+                  epochs: int = 30, seed: int = 0, verbose: bool = True, refit: str = "yearly") -> pd.Series:
     torch.manual_seed(seed)
     dates = frame.index.get_level_values(0)
     y_all = np.log(frame["rv_next"].to_numpy()).astype(np.float32)
+    labelled = np.isfinite(y_all)
     st_all = _static(frame)
     out = pd.Series(np.nan, index=frame.index)
-    for Y in sorted({d.year for d in dates if d.year >= first_year}):
-        tr = (dates >= pd.Timestamp(f"{Y - window_years}-01-01")) & (dates < pd.Timestamp(f"{Y - 1}-01-01"))
-        va = (dates >= pd.Timestamp(f"{Y - 1}-01-01")) & (dates < pd.Timestamp(f"{Y}-01-01"))
-        te = dates.year == Y
-        # Train rows dated before Y-1; their 21-day targets end before the validation year starts.
+    for tr, va, te, Y in _periods(dates, first_year, refit, window_years):
+        tr, va = tr & labelled, va & labelled
+        if tr.sum() < 1000 or va.sum() < 100 or not te.any():
+            continue
+        # Train rows end before validation starts; their 21-day targets end before the validation period.
         m = VolLSTM()
         opt = torch.optim.Adam(m.parameters(), lr=1e-3, weight_decay=1e-5)
         S, X, Yt = (torch.from_numpy(a) for a in (seq[tr].astype(np.float32), st_all[tr], y_all[tr]))
@@ -205,3 +232,67 @@ def save_vol(frame: pd.DataFrame) -> None:
 def load_vol() -> pd.DataFrame | None:
     path = PRED_DIR / "vol_forecasts.parquet"
     return pd.read_parquet(path) if path.exists() else None
+
+
+def update_live(p: Panel, window_years: int = 8, seed: int = 0) -> pd.DataFrame:
+    """Today's next-month volatility forecast for every stock (run daily by the pipeline).
+
+    The LSTM is refit once a month (cached in data/models/vol_lstm_YYYY-MM.pt) on the window up to the last month
+    whose 21-day outcomes are known, then applied to today's row. Results are merged into vol_forecasts.parquet
+    (replacing any earlier rows for the same dates), with hist and EWMA alongside."""
+    from ..config import ROOT
+    frame, seq = build_vol_data(p, live=True)
+    dates = frame.index.get_level_values(0)
+    today = dates.max()
+    M = today.to_period("M").to_timestamp()
+    cache = ROOT / "data" / "models" / f"vol_lstm_{M:%Y-%m}.pt"
+    st_all = _static(frame)
+    te = (dates >= M) & (dates <= today)
+    m = VolLSTM()
+    if cache.exists():
+        m.load_state_dict(torch.load(cache))
+    else:
+        torch.manual_seed(seed)
+        y_all = np.log(frame["rv_next"].to_numpy()).astype(np.float32)
+        v_end, v0 = M - pd.DateOffset(months=1), M - pd.DateOffset(months=13)
+        lab = np.isfinite(y_all)
+        tr = (dates >= M - pd.DateOffset(years=window_years)) & (dates < v0) & lab
+        va = (dates >= v0) & (dates < v_end) & lab
+        opt = torch.optim.Adam(m.parameters(), lr=1e-3, weight_decay=1e-5)
+        S, X, Yt = (torch.from_numpy(a) for a in (seq[tr].astype(np.float32), st_all[tr], y_all[tr]))
+        Sv, Xv, Yv = (torch.from_numpy(a) for a in (seq[va].astype(np.float32), st_all[va], y_all[va]))
+        best, state, bad = np.inf, None, 0
+        for _ in range(30):
+            m.train()
+            perm = torch.randperm(len(Yt))
+            for s in range(0, len(Yt), 512):
+                i = perm[s:s + 512]
+                loss = ((m(S[i], X[i]) - Yt[i]) ** 2).mean()
+                opt.zero_grad()
+                loss.backward()
+                opt.step()
+            m.eval()
+            with torch.no_grad():
+                v = ((m(Sv, Xv) - Yv) ** 2).mean().item()
+            if v < best - 1e-5:
+                best, state, bad = v, {k: t.clone() for k, t in m.state_dict().items()}, 0
+            else:
+                bad += 1
+                if bad >= 4:
+                    break
+        m.load_state_dict(state)
+        cache.parent.mkdir(parents=True, exist_ok=True)
+        torch.save(state, cache)
+    m.eval()
+    with torch.no_grad():
+        pred = np.exp(m(torch.from_numpy(seq[te].astype(np.float32)), torch.from_numpy(st_all[te])).numpy())
+    new = frame[te].copy()
+    new["hist"] = new["rv21"]
+    new["ewma"] = ewma_forecast(p, new).to_numpy()
+    new["lstm"] = pred
+    old = load_vol()
+    if old is not None:
+        old = old[~old.index.get_level_values(0).isin(new.index.get_level_values(0).unique())]
+        new = pd.concat([old, new.reindex(columns=old.columns)]).sort_index()
+    save_vol(new)
+    return new.xs(today, level=0)

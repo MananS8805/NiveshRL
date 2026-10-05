@@ -42,3 +42,4 @@ data/paper.json
 data/*.tmp
 data/tradebook.json
 data/nse/
+data/models/

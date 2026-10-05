@@ -25,7 +25,8 @@ import pandas as pd
 from ..config import ROOT
 
 DAILY = ROOT / "data" / "daily"
-STEPS = ["prices", "technicals", "delivery", "fundamentals", "news", "sentiment", "nextday", "range", "monitor",
+STEPS = ["prices", "technicals", "delivery", "fundamentals", "news", "sentiment", "nextday", "range", "stacked",
+         "volatility", "regimes", "monitor",
          "briefing"]
 
 
@@ -66,6 +67,25 @@ def _buzz(sent: pd.DataFrame, today: Path) -> pd.Series:
         return pd.Series(np.nan, index=sent.index)
     base = pd.concat(hist, axis=1).mean(axis=1).reindex(sent.index)
     return (sent["n_news"] - base) / (base + 1)
+
+
+def refit_choice() -> str:
+    """'monthly' when scripts/compare_refits.py measured the monthly refit as better out of sample, else 'yearly'."""
+    from ..config import ROOT
+    f = ROOT / "report" / "results" / "refit_decision.json"
+    try:
+        d = json.loads(f.read_text())
+        return "monthly" if d.get("monthly_beats_yearly") else "yearly"
+    except (OSError, ValueError):
+        return "yearly"
+
+
+def fresh_choice() -> dict:
+    from ..config import ROOT
+    try:
+        return json.loads((ROOT / "report" / "results" / "freshness_decision.json").read_text())
+    except (OSError, ValueError):
+        return {}
 
 
 def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -> dict:
@@ -165,6 +185,24 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
     def nextday():
         from . import nextday as nd
         dd = nd.build(p, ctx.get("frames"))
+        ctx["dd"] = dd
+        if refit_choice() == "monthly":
+            # measured better out of sample (report/results/refit_comparison.md): models refit each month
+            from . import stacked as ST
+            r = ST.daily_update(p, dd)
+            ctx["stack"] = r
+            last = r["base"].copy()
+            last["prob"] = last["ensemble"] if "ensemble" in last else last["lgbm"]
+            last.to_parquet(out / "nextday.parquet")
+            ctx["prob"] = last["prob"]
+            hist = pd.read_parquet(ST.BASE_PATH)
+            ytd = hist[hist.index.get_level_values(0).year == day.year].dropna(subset=["y"])
+            meta = {m: nd.evaluate(ytd, m) for m in ("ensemble", "lgbm", "logreg") if m in ytd and ytd[m].notna().any()}
+            (out / "nextday_ytd.json").write_text(json.dumps(meta, indent=2))
+            b = r["base"]
+            refit = pd.Timestamp(b["refit"].iloc[0]).strftime("%b %Y") if "refit" in b and len(b) else "?"
+            return (f"P(up) for {len(last)} stocks (monthly refit, {refit}); "
+                    f"YTD AUC {meta.get('ensemble', meta.get('lgbm', {})).get('AUC', float('nan')):.3f}")
         models = ("lgbm", "seq", "logreg") if with_seq else ("lgbm", "logreg")
         pred = nd.walk_forward(dd, first_test_year=day.year, models=models, verbose=False)
         last = pred.xs(day, level=0)
@@ -187,6 +225,38 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
                           index=today.index).sort_values("range_pct", ascending=False)
         fc.to_parquet(out / "range.parquet")
         return f"range forecast for {len(fc)} stocks; top: {', '.join(t.replace('.NS', '') for t in fc.index[:3])}"
+
+    def stacked():
+        """The 4-model stack (LightGBM, sequence net, logistic, range) and today's pattern changes."""
+        from . import stacked as ST
+        r = ctx.get("stack") or ST.daily_update(p, ctx.get("dd"))
+        if r["stacked"].empty:
+            return r.get("note", "no stacked output")
+        r["stacked"].to_parquet(out / "stacked.parquet")
+        ch = r["changes"]
+        if len(ch):
+            ch.to_parquet(out / "pattern_changes.parquet")
+        (out / "stacked_meta.json").write_text(json.dumps({"weights": r.get("weights", {})}, indent=2, default=float))
+        n_notable = int(ch["notable"].sum()) if len(ch) else 0
+        return f"stacked P(up) for {len(r['stacked'])} stocks; {len(ch)} pattern changes, {n_notable} notable"
+
+    def volatility():
+        """Today's next-month volatility forecast (LSTM refit monthly). Before this step existed the forecasts stopped
+        at the last month-end whose following month had finished."""
+        from .volatility import update_live
+        v = update_live(p)
+        return f"vol forecast for {len(v)} stocks, median {float(v['lstm'].median()):.1%}"
+
+    def regimes():
+        """Re-label this year's weeks with a model trained on the window chosen by scripts/compare_freshness.py."""
+        from .regime import detect_regimes, load_regimes, save_regimes
+        w_old = load_regimes()
+        win = 8 if fresh_choice().get("regime_rolling_better") else None
+        w_new = detect_regimes(p, first_year=day.year, window_years=win)
+        if w_old is not None:
+            w_new = pd.concat([w_old[w_old.index.year < day.year], w_new]).sort_index()
+        save_regimes(w_new)
+        return f"regime {w_new['regime'].iloc[-1]} (week of {w_new.index[-1].date()}, {'rolling 8y' if win else 'expanding'})"
 
     def monitor():
         from .monitor import monitor_list
@@ -229,8 +299,8 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
         return f"{len(b['narrative'])} briefing lines"
 
     for name, fn in [("technicals", technicals), ("delivery", delivery), ("fundamentals", fundamentals), ("news", news),
-                     ("sentiment", sentiment), ("nextday", nextday), ("range", range_), ("monitor", monitor),
-                     ("briefing", briefing)]:
+                     ("sentiment", sentiment), ("nextday", nextday), ("range", range_), ("stacked", stacked),
+                     ("volatility", volatility), ("regimes", regimes), ("monitor", monitor), ("briefing", briefing)]:
         step(name, fn)
     # A partial run (e.g. --steps briefing) updates the day's status instead of replacing it.
     prev = json.loads((out / "status.json").read_text()) if (out / "status.json").exists() else {}

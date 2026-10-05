@@ -68,9 +68,14 @@ def daily_context(bars: pd.DataFrame) -> pd.DataFrame:
     return ctx
 
 
-def run(days: int | None = None, warmup: int = 6, reset: bool = True, progress=None, seed: int = 0) -> dict:
+def run(days: int | None = None, warmup: int = 6, reset: bool = True, progress=None, seed: int = 0,
+        root=None, learning: dict | None = None) -> dict:
+    """``root``: where to keep the replay's state (default data/intraday/replay, which the app shows and warm-starts
+    from); experiments pass a temporary folder. ``learning``: overrides for cfg['learning'] (e.g. half_life_days)."""
     cfg = config()
-    root = DIR / "replay"
+    if learning:
+        cfg["learning"] = {**cfg["learning"], **learning}
+    root = root or DIR / "replay"
     if reset and root.exists():
         for f in root.glob("*"):
             f.unlink()
