@@ -224,3 +224,19 @@ def nse_chain(symbol: str, expiry: str | None = None):
     from ..research import nse
     return _cached(f"nse:oc:{symbol}:{expiry}", 180, lambda: nse.option_chain(symbol, expiry))
 
+
+def plan_entry(feed, ticker: str) -> tuple[float | None, str]:
+    """(entry price, label) for a trade plan: the live price while the stream is live, else the last close."""
+    from ..livefeed import market_open
+    q = feed.quote(ticker) if feed else None
+    if q and q.get("price") and market_open():
+        import datetime as _dt
+        ts = q.get("ts")
+        sec = ts / 1000 if isinstance(ts, (int, float)) and ts > 1e12 else ts      # the stream stamps in milliseconds
+        when = _dt.datetime.fromtimestamp(sec).strftime("%H:%M") if isinstance(sec, (int, float)) and sec > 1e9 else "now"
+        return float(q["price"]), f"live {when}"
+    s = panel().close[ticker].dropna() if ticker in panel().close else None
+    if s is None or not len(s):
+        return None, ""
+    return float(s.iloc[-1]), f"last close {s.index[-1]:%d %b}"
+

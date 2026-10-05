@@ -84,7 +84,8 @@ class DeskPanel(Panel):
                                       "₹ at T1": "₹{:,.0f}", "₹ at T2": "₹{:,.0f}"})
         self.orders.row_clicked.connect(lambda t: self.stock_selected.emit(str(t)))
         pl.addWidget(self.orders, 1)
-        pl.addWidget(muted("Entry = last close (you'd buy at the next open). Stop under the 10-day low, kept between 2× and "
+        pl.addWidget(muted("Entry = the live price while the market is open (refreshed when you revisit this tab), "
+                           "otherwise the last close (you'd buy at the next open). Stop under the 10-day low, kept between 2× and "
                            "2.5× ATR and at most 8% away; T1 = 1.5R, T2 = 2.5R; size = capital × risk% × risk-state "
                            "multiplier ÷ R, max 20% of capital per stock, at most 2 per sector. Suggested: book a third "
                            "at T1 and move the stop to entry. A plan, not advice: nothing is ordered."))
@@ -119,6 +120,7 @@ class DeskPanel(Panel):
         self.j_sym = QLineEdit()
         self.j_sym.setPlaceholderText("Symbol, e.g. TCS")
         self.j_date = QLineEdit(date.today().isoformat())
+        self._j_default = date.today().isoformat()
         self.j_entry, self.j_stop, self.j_exit = QDoubleSpinBox(), QDoubleSpinBox(), QDoubleSpinBox()
         for sp, lab in [(self.j_entry, "Entry ₹ "), (self.j_stop, "Stop ₹ "), (self.j_exit, "Exit ₹ ")]:
             sp.setRange(0, 1_000_000)
@@ -182,6 +184,9 @@ class DeskPanel(Panel):
              f"{st['risk_pct']:.2%} of ₹{st['capital']:,.0f}"),
             ("Max positions", str(st["max_positions"]), None, "2 per sector at most"),
         ])
+        if self.j_date.text().strip() == getattr(self, "_j_default", ""):     # untouched: keep it on today's date
+            self.j_date.setText(date.today().isoformat())
+        self._j_default = date.today().isoformat()
         self._planner(rs, st)
         self._holdings()
         self._journal()
@@ -224,7 +229,12 @@ class DeskPanel(Panel):
                                                      "watchlist."]}))
             self.totals.set_items([])
             return
-        plans = P.plans_for(p, cands, st["capital"], st["risk_pct"], rs.multiplier)
+        entries, labels = {}, {}
+        for t in cands:
+            e, lab = data.plan_entry(self.ctx.feed, t)
+            if e is not None:
+                entries[t], labels[t] = e, lab
+        plans = P.plans_for(p, cands, st["capital"], st["risk_pct"], rs.multiplier, entries=entries)
         rows, per_sector, used = [], {}, 0.0
         for t, r in plans.iterrows():
             sec = p.sectors.get(t, "")
@@ -234,7 +244,8 @@ class DeskPanel(Panel):
                 continue
             per_sector[sec] = per_sector.get(sec, 0) + 1
             used += r["position_value"]
-            rows.append({"ticker": t, "Sector": sec, "Entry": r["entry"], "Stop": r["stop"], "Stop %": r["stop_pct"],
+            rows.append({"ticker": t, "Sector": sec, "Entry": r["entry"], "Entry from": labels.get(t, ""),
+                         "Stop": r["stop"], "Stop %": r["stop_pct"],
                          "T1": r["t1"], "T2": r["t2"], "Qty": r["qty"], "Amount": r["position_value"],
                          "₹ risk": r["rupee_risk"], "₹ at T1": r["qty"] * (r["t1"] - r["entry"]),
                          "₹ at T2": r["qty"] * (r["t2"] - r["entry"]),

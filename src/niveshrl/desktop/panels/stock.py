@@ -616,14 +616,17 @@ class StockPanel(Panel):
         from .desk import current_risk_state, desk_settings
         st, rs = desk_settings(), current_risk_state()
         p = data.panel()
-        pl = make_plan(p, self.ticker, st["capital"], st["risk_pct"], rs.multiplier)
+        entry, entry_from = data.plan_entry(self.ctx.feed, self.ticker)
+        pl = make_plan(p, self.ticker, st["capital"], st["risk_pct"], rs.multiplier, entry=entry)
         if pl is None:
             self.plan_view.setHtml("<p>Not enough price history for a plan.</p>")
             self.check_view.setHtml("")
             self.scen.set_frame(pd.DataFrame())
             return
         A, M = theme.AMBER, theme.MUTED
-        rows = [("Entry (last close)", f"₹{pl.entry:,.2f}", "you'd buy at the next open"),
+        rows = [(f"Entry ({entry_from})", f"₹{pl.entry:,.2f}",
+                 "the price now; reopen the tab to refresh" if entry_from.startswith("live")
+                 else "you'd buy at the next open"),
                 ("Stop", f"₹{pl.stop:,.2f}", f"{pl.stop_pct:.1%} below entry · {pl.risk_per_share / pl.atr:.1f}× ATR"),
                 ("R (risk per share)", f"₹{pl.risk_per_share:,.2f}", f"ATR(14) ₹{pl.atr:,.2f}"),
                 ("T1 = 1.5R", f"₹{pl.t1:,.2f}", "book about a third, move the stop to entry"),

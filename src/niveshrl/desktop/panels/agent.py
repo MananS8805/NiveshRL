@@ -17,7 +17,7 @@ from . import Panel, vbox
 
 
 AGENT_TERMS = {c: "agent_trade" for c in ("ticker", "setup", "side", "action", "entry", "stop", "target", "qty", "last",
-                                           "exit", "reason", "ts", "event", "detail", "why")} | {
+                                           "exit", "reason", "ts", "event", "detail", "why", "time in", "time out")} | {
     "gross": "intraday_costs", "costs": "intraday_costs", "net": "intraday_costs", "unrealized": "intraday_costs",
     "r": "r_multiple", "prob": "agent_ml", "day": "agent_day", "pool_start": "agent_day", "pool_end": "agent_day",
     "tax_accrued": "speculative_tax", "trades": "agent_day", "signals": "agent_day", "skipped": "agent_day",
@@ -31,6 +31,17 @@ def _json(path):
         return json.loads(path.read_text(encoding="utf-8")) if path.exists() else None
     except (ValueError, OSError):
         return None
+
+
+def _with_times(df: pd.DataFrame) -> pd.DataFrame:
+    """'time in' = the bar the fill happened on (the open just after the signal bar ended); 'time out' = the exit bar."""
+    if df.empty:
+        return df
+    for src, dst in (("entry_ts", "time in"), ("exit_ts", "time out")):
+        if src in df:
+            ts = pd.to_datetime(df[src], errors="coerce")
+            df[dst] = ts.dt.strftime("%H:%M").where(ts.notna(), "")
+    return df
 
 
 class AgentPanel(Panel):
@@ -198,12 +209,14 @@ class AgentPanel(Panel):
              (f"win {float((tr['net'] > 0).mean()):.0%} · avg {tr['r'].mean():+.2f}R" if n_closed else "") + (f" · {verdict}" if verdict else "")),
             ("vs random control", f"₹{float(st.get('control_pool', start)):,.0f}", None, "same signals, coin-flip entries"),
         ])
-        self.positions.set_frame(pd.DataFrame(live.get("positions", [])).reindex(
-            columns=["ticker", "setup", "side", "action", "entry", "stop", "target", "qty", "last", "unrealized", "prob", "why"])
-            if live.get("positions") else pd.DataFrame({"": ["No open positions."]}))
-        t = pd.DataFrame(live.get("trades", []))
-        self.trades.set_frame(t.reindex(columns=["ticker", "setup", "side", "action", "entry", "exit", "reason", "qty", "gross",
-                                                 "costs", "net", "r", "why"]) if len(t) else pd.DataFrame({"": ["No closed trades today."]}))
+        pos = _with_times(pd.DataFrame(live.get("positions", [])))
+        self.positions.set_frame(pos.reindex(
+            columns=["ticker", "setup", "side", "action", "time in", "entry", "stop", "target", "qty", "last", "unrealized",
+                     "prob", "why"]) if len(pos) else pd.DataFrame({"": ["No open positions."]}))
+        t = _with_times(pd.DataFrame(live.get("trades", [])))
+        self.trades.set_frame(t.reindex(columns=["ticker", "setup", "side", "action", "time in", "entry", "time out", "exit",
+                                                 "reason", "qty", "gross", "costs", "net", "r", "why"])
+                              if len(t) else pd.DataFrame({"": ["No closed trades today."]}))
         lg = pd.DataFrame(live.get("log", []))
         self.decisions.set_frame(lg.reindex(columns=["ts", "ticker", "setup", "side", "event", "action", "prob", "why", "detail"])
                                  if len(lg) else pd.DataFrame({"": ["No decisions yet today."]}))

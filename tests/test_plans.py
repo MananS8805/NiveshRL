@@ -125,3 +125,23 @@ def test_edge_statistic():
                        "r": np.r_[rng.normal(0.3, 1, 400), rng.normal(0.0, 1, 400)]})
     e = F.edge(df)
     assert 0.15 < e["edge R"] < 0.45 and e["t-stat"] > 2
+
+
+def test_plan_entry_uses_live_price_only_while_market_open(monkeypatch):
+    """The desk / stock-page plan must not stay frozen at yesterday's close while the market trades."""
+    from niveshrl import livefeed
+    from niveshrl.desktop import data
+
+    class Feed:
+        def quote(self, t):
+            return {"price": 2100.0, "ts": 1_791_250_000_000}           # milliseconds, as the stream sends them
+    t = data.panel().tickers[0]
+    monkeypatch.setattr(livefeed, "market_open", lambda *a, **k: True)
+    e, lab = data.plan_entry(Feed(), t)
+    assert e == 2100.0 and lab.startswith("live ")
+    monkeypatch.setattr(livefeed, "market_open", lambda *a, **k: False)
+    e2, lab2 = data.plan_entry(Feed(), t)
+    assert e2 == float(data.panel().close[t].dropna().iloc[-1]) and lab2.startswith("last close")
+    from niveshrl.research.plans import plans_for
+    df = plans_for(data.panel(), [t], entries={t: 2100.0})
+    assert df.loc[t, "entry"] == 2100.0

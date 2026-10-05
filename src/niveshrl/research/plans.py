@@ -139,13 +139,15 @@ def make_plan(p: Panel, ticker: str, capital: float = 100_000.0, risk_pct: float
 
 
 def plans_for(p: Panel, tickers: list[str], capital: float = 100_000.0, risk_pct: float = 0.01,
-              multiplier: float = 1.0, side: str = "long") -> pd.DataFrame:
+              multiplier: float = 1.0, side: str = "long", entries: dict | None = None) -> pd.DataFrame:
+    """Plans for several stocks. ``entries`` (ticker -> price) overrides the last close, e.g. live prices."""
     from .technicals import atr as atr_fn
     a = atr_fn(p)
     rows = []
     for t in tickers:
         if t in p.close.columns:
-            pl = make_plan(p, t, capital, risk_pct, multiplier, side=side, atr_df=a)
+            pl = make_plan(p, t, capital, risk_pct, multiplier, side=side, atr_df=a,
+                           entry=(entries or {}).get(t))
             if pl is not None:
                 rows.append(pl.to_dict())
     return pd.DataFrame(rows).set_index("ticker") if rows else pd.DataFrame()

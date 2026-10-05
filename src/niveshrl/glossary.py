@@ -901,7 +901,7 @@ E("trade_plan", "Trade plan (entry, stop, targets)", "Desk",
   use="Turns a watch list into a concrete, risk-limited order and tells you in advance what a loss costs.",
   caveat="Rules, not predictions: on gaps the stop can fill worse than planned. Not advice; nothing is ordered.",
   related=["r_multiple", "position_size", "risk_state", "atr_pct"],
-  aliases=["Entry", "Stop", "T1", "T2", "Trade plan", "Capital planner"])
+  aliases=["Entry from", "Entry", "Stop", "T1", "T2", "Trade plan", "Capital planner"])
 E("stop_pct", "Stop distance %", "Desk", "How far the stop is below entry, as a % of the entry price.",
   unit="pct", bands=[(0.03, "tight", "small loss per share; easier to get stopped by noise"),
                      (0.06, "normal", ""), (0.08, "wide", "fewer shares for the same rupee risk")],
