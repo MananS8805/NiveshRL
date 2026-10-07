@@ -115,6 +115,8 @@ class EngineV2:
 
     # -------------------------------------------------------------- predictions → signals
     def threshold(self) -> float:
+        if "R > 0" in self.policy:                                  # measured best: trade only positive predicted R
+            return 0.0
         e = np.asarray(self.state.get("recent_e", []), float)
         per_day = len(e) / max(len(self.state.get("recent_days", [])) or 1, 1)
         if len(e) < 200:

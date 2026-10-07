@@ -233,3 +233,35 @@ def build(bars_long: pd.DataFrame, cfg: dict, tickers: set | None = None, progre
         if progress:
             progress((di + 1) / len(days))
     return blocks
+
+
+def causal_joins(bars_long: pd.DataFrame, cfg: dict, top: int | None = None) -> pd.DataFrame:
+    """(ticker, day, join_bar, bar0_score) for every stock-day that came into play, using only bars up to the join bar,
+    in the same first-come order (top N) as the live agent. ``bar0_score`` is finite when it was already in play at the
+    first bar (the 'stocks in play' of opening-range strategies)."""
+    from ..agent import in_play_matrix
+    from ..replay import daily_context
+    top = top or cfg["universe"]["in_play_top"]
+    ctx_all = daily_context(bars_long)
+    bl = bars_long.assign(day=bars_long["ts"].dt.normalize())
+    rows = []
+    for day, db in bl.groupby("day"):
+        per = {t: g.set_index("ts")[["open", "high", "low", "close", "volume"]] for t, g in db.groupby("ticker")
+               if t != "^NSEI" and len(g) >= 10}
+        try:
+            cx = ctx_all.xs(day, level=1)
+        except KeyError:
+            continue
+        ctx = {t: cx.loc[t].to_dict() for t in per if t in cx.index}
+        tick, S = in_play_matrix(per, ctx, cfg["universe"])
+        if not S.size:
+            continue
+        joined: dict[str, int] = {}
+        for k in range(S.shape[1]):
+            col = S[:, k]
+            for i in np.flatnonzero(np.isfinite(col))[np.argsort(-col[np.isfinite(col)])]:
+                if tick[i] not in joined and len(joined) < top:
+                    joined[tick[i]] = k
+        for t, k in joined.items():
+            rows.append({"ticker": t, "day": day, "join_bar": k, "bar0_score": float(S[tick.index(t), 0])})
+    return pd.DataFrame(rows)

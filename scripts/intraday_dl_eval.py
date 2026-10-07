@@ -57,7 +57,10 @@ def score(pred: pd.DataFrame, in_play: set | None = None, k: int = 5) -> dict:
     d = pred.copy()
     d["day"] = pd.to_datetime(d["ts"]).dt.normalize()
     if in_play is not None:
-        d = d[[(t, dd) in in_play for t, dd in zip(d["ticker"], d["day"])]]
+        j = in_play.assign(day=pd.to_datetime(in_play["day"]))[["ticker", "day", "join_bar"]]
+        d = d.merge(j, on=["ticker", "day"])
+        if "bar" in d:
+            d = d[d["bar"] >= d["join_bar"]]                 # only bars after the stock came into play
     long_ = d[["day", "ticker", "ts", "eL", "rL"]].rename(columns={"eL": "e", "rL": "r"})
     short = d[["day", "ticker", "ts", "eS", "rS"]].rename(columns={"eS": "e", "rS": "r"})
     both = pd.concat([long_, short]).dropna(subset=["e", "r"])
@@ -76,6 +79,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--refit-every", type=int, default=5)
     ap.add_argument("--first-test", type=int, default=15)
+    ap.add_argument("--rescore", action="store_true", help="reuse the saved out-of-sample predictions")
     a = ap.parse_args()
     t0 = time.time()
     cfg = config()
@@ -85,30 +89,17 @@ def main() -> None:
     blocks = DS.build(bars, cfg)
     days = sorted({b.day for b in blocks})
     print(f"{len(blocks):,} stock-days over {len(days)} days in {time.time() - t0:.0f}s", flush=True)
-    # which stock-days were 'in play' (the agent's own universe each day)
-    from niveshrl.intraday.agent import in_play_matrix
-    from niveshrl.intraday.replay import daily_context
-    ctx_all = daily_context(bars)
-    bl = bars.assign(day=bars["ts"].dt.normalize())
-    in_play = set()
-    for day in days:
-        db = bl[bl["day"] == day]
-        per = {t: g.set_index("ts")[["open", "high", "low", "close", "volume"]] for t, g in db.groupby("ticker") if t != "^NSEI"}
-        try:
-            cx = ctx_all.xs(day, level=1)
-        except KeyError:
-            continue
-        ctx = {t: cx.loc[t].to_dict() for t in per if t in cx.index}
-        tick, S = in_play_matrix(per, ctx, cfg["universe"])
-        sc = np.nanmax(np.where(np.isfinite(S), S, -np.inf), axis=1) if S.size else np.array([])
-        top = np.argsort(-sc)[:cfg["universe"]["in_play_top"]]
-        in_play |= {(tick[i], day) for i in top if np.isfinite(sc[i])}
+    # which stock-bars were 'in play': causally, from the bar each stock joined (as the live agent sees it)
+    joins = DS.causal_joins(bars, cfg)
+    in_play = joins
     print("in-play stock-days:", len(in_play), flush=True)
-
-    print("TCN walk-forward", flush=True)
-    tcn = T.walk_forward(blocks, a.first_test, a.refit_every)
-    print("LightGBM walk-forward", flush=True)
-    gbm = lgbm_walk_forward(blocks, a.first_test, a.refit_every)
+    if a.rescore and (DLDIR / "oos_tcn.parquet").exists():
+        tcn, gbm = pd.read_parquet(DLDIR / "oos_tcn.parquet"), pd.read_parquet(DLDIR / "oos_lgbm.parquet")
+    else:
+        print("TCN walk-forward", flush=True)
+        tcn = T.walk_forward(blocks, a.first_test, a.refit_every)
+        print("LightGBM walk-forward", flush=True)
+        gbm = lgbm_walk_forward(blocks, a.first_test, a.refit_every)
     rows = {"TCN (deep learning), all stocks": score(tcn), "LightGBM, all stocks": score(gbm),
             "TCN, in-play stocks": score(tcn, in_play), "LightGBM, in-play stocks": score(gbm, in_play)}
     t = pd.DataFrame(rows).T
@@ -116,7 +107,7 @@ def main() -> None:
     DLDIR.mkdir(parents=True, exist_ok=True)
     tcn.to_parquet(DLDIR / "oos_tcn.parquet")
     gbm.to_parquet(DLDIR / "oos_lgbm.parquet")
-    pd.DataFrame(sorted(in_play), columns=["ticker", "day"]).to_parquet(DLDIR / "in_play.parquet")
+    in_play.to_parquet(DLDIR / "in_play.parquet")
     period = f"{days[a.first_test]:%d %b} → {days[-1]:%d %b %Y}"
     cols = [str(c) for c in t.columns]
     lines = ["| Model | " + " | ".join(cols) + " |", "|" + " --- |" * (len(cols) + 1)]

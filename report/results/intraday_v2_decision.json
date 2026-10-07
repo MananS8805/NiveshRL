@@ -1,0 +1,23 @@
+{
+  "best": "model: top-5 threshold (causal)",
+  "switch": false,
+  "model": "tcn",
+  "best_stats": {
+    "trades": 70,
+    "trades/day": 1.8421052631578947,
+    "avg R": 0.016318685454981666,
+    "win rate": 0.38571428571428573,
+    "total R": 1.1423079818487167,
+    "net \u20b9": 1142.3079818487167,
+    "daily t": 0.19446178454153645,
+    "max drawdown R": 3.747317172586918
+  },
+  "iql": {
+    "trades": 26,
+    "fixed avg R": 0.020636680347653945,
+    "policy avg R": -0.08654438534631771,
+    "diff": -0.10718106569397169,
+    "t": -1.5270172623684433,
+    "avg bars held (policy)": 10.0
+  }
+}

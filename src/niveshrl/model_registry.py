@@ -197,6 +197,33 @@ CARDS: list[ModelCard] = [
               "Stock and market state at the signal date, model ranks, context tags.", "Walk-forward by year (2017-2026).",
               "Track record (comparison)", "Measured: no improvement (rank correlation −0.03): the list is kept as is.",
               "rejected", _r("swing_meta.csv", "best 50% by meta-label", ["trades", "avg R", "t (per signal day)"])),
+    ModelCard("orb", "Opening-range breakout (Zarattini, Barbon & Aziz 2024)", "Rules",
+              "Published 'profitable day-trading strategy': trade the direction of the first 5-minute bar in stocks in play.",
+              "Rule: first 5-minute bar up → long at the second bar's open (down → short), stop 10% of daily ATR, exit at the close.",
+              "The best-known recent academic day-trading result; tested here because it is the industry's reference ORB.",
+              "5-minute bars; stocks already in play at the first bar (top 20 a day).", "No training (fixed rules).",
+              "Comparison only", "Paper: +0.13R/trade gross on US stocks without spread/slippage; independent replication "
+              "found net ≈ 0. Here, after NSE costs: slightly negative.", "rejected",
+              _r("industry_rules.csv", "Opening-range breakout, stocks in play (Zarattini 2024)", ["trades", "avg R / trade", "t-stat"])),
+    ModelCard("vwap_rule", "VWAP trend (Zarattini & Aziz 2023)", "Rules",
+              "Long above the session VWAP, short below, re-checked every bar.",
+              "Rule on NIFTY 5-minute bars (index level as a stand-in for NIFTYBEES / futures).",
+              "Marketed as the 'holy grail' of day trading on QQQ; tested for NSE.", "NIFTY 5-minute bars.", "No training.",
+              "Comparison only", "Many round trips a day: costs dominate.", "rejected",
+              _r("industry_rules.csv", "VWAP trend on NIFTY (Zarattini & Aziz 2023)", ["trades", "avg R / trade", "net ₹ (₹1L pool)"])),
+    ModelCard("turtle", "Turtle / Donchian 55-20 breakout", "Rules",
+              "Classic trend following: buy a close above the 55-day high, sell a close below the 20-day low.",
+              "Rule on daily closes, 10 equal slots, point-in-time NIFTY 200 members, 0.15% per side costs.",
+              "The most famous trend-following rule set (Turtle traders); trend following has a century of positive "
+              "evidence across asset classes (Hurst, Ooi & Pedersen).", "Daily prices.", "No training.",
+              "Comparison only", "Positive and beats NIFTY, but below equal weight and below 12-1 momentum (19.3%/yr).",
+              "research", _r("industry_rules.csv", "Turtle / Donchian 55-20 breakout", ["CAGR", "Sharpe", "max drawdown"])),
+    ModelCard("rsi2", "Connors RSI(2) mean reversion", "Rules",
+              "Buy short dips in uptrends: close > 200-day average and 2-day RSI < 10; sell when close > 5-day average.",
+              "Rule on daily closes, 10 slots, point-in-time members, 0.15% per side.",
+              "One of the most popular published short-term rules.", "Daily prices.", "No training.", "Comparison only",
+              "High win rate but tiny average gains: costs and crash drawdowns erase them.", "rejected",
+              _r("industry_rules.csv", "Connors RSI(2) mean reversion", ["CAGR", "Sharpe", "max drawdown"])),
 ]
 
 

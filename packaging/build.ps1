@@ -34,6 +34,8 @@ foreach ($d in @("predictions", "daily", "constituents", "models")) { if (Test-P
 # intraday agent: the liquid universe and the replay's learning (warm start + the Replay tab); not the 5-minute bars
 New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\replay") | Out-Null
 if (Test-Path "data\intraday\universe.csv") { Copy-Item "data\intraday\universe.csv" (Join-Path $Seed "data\intraday\universe.csv") }
+New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\dl") | Out-Null      # v2: the trained TCN
+if (Test-Path "data\intraday\dl\tcn_latest.pkl") { Copy-Item "data\intraday\dl\tcn_latest.pkl" (Join-Path $Seed "data\intraday\dl\tcn_latest.pkl") }
 foreach ($f in @("state.json", "trades.csv", "bandit.json", "scorer.pkl", "shadow.parquet")) {
     if (Test-Path "data\intraday\replay\$f") { Copy-Item "data\intraday\replay\$f" (Join-Path $Seed "data\intraday\replay\$f") }
 }

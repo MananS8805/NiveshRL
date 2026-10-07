@@ -152,6 +152,19 @@ class TrackPanel(Panel):
             ok = bool(d.get(key))
             rows.append({"Area": area, "Result": "better" if ok else "not better", "Decision": "adopted" if ok else "kept the old one"})
         rows.append({"Area": "Intraday: forgetting (20-day half-life)", "Result": "slightly better (weak)", "Decision": "adopted"})
+        f = ROOT / "report" / "results" / "industry_rules.csv"
+        if f.exists():
+            ir = pd.read_csv(f, index_col=0)
+            intr = ir[ir["kind"] == "intraday"]
+            pos = [i.split(" (")[0] for i, r in intr.iterrows() if r["avg R / trade"] > 0 and r["t-stat"] > 2]
+            rows.append({"Area": "Published intraday rules (ORB, VWAP trend, 30-min momentum)",
+                         "Result": "none profitable after NSE costs" if not pos else "profitable: " + ", ".join(pos),
+                         "Decision": "not adopted" if not pos else "review"})
+            if "Turtle / Donchian 55-20 breakout" in ir.index:
+                t = ir.loc["Turtle / Donchian 55-20 breakout"]
+                rows.append({"Area": "Published daily rules (Turtle, RSI(2), reversal, 12-m trend)",
+                             "Result": f"best: Turtle {t['CAGR']:.1%}/yr vs 12-1 momentum 19.3%",
+                             "Decision": "momentum kept as the reference"})
         self.o_exp.set_frame(pd.DataFrame(rows).set_index("Area"))
 
     @staticmethod

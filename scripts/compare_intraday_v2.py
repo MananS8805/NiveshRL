@@ -25,7 +25,8 @@ DLDIR = DIR / "dl"
 def candidates(pred: pd.DataFrame, in_play: pd.DataFrame) -> pd.DataFrame:
     d = pred.copy()
     d["day"] = pd.to_datetime(d["ts"]).dt.normalize()
-    d = d.merge(in_play.assign(day=pd.to_datetime(in_play["day"])), on=["ticker", "day"])
+    d = d.merge(in_play.assign(day=pd.to_datetime(in_play["day"]))[["ticker", "day", "join_bar"]], on=["ticker", "day"])
+    d = d[d["bar"] >= d["join_bar"]]                       # causal: only bars after the stock came into play
     d["side"] = np.where(d["eL"] >= d["eS"], "L", "S")
     d["e"] = np.where(d["side"] == "L", d["eL"], d["eS"])
     d["r"] = np.where(d["side"] == "L", d["rL"], d["rS"])
@@ -159,9 +160,10 @@ def main() -> None:
     t = pd.DataFrame(res).T
     t.index.name = "Policy"
     v1 = {"days": 52, "trades": 151, "avg R": -0.17, "net ₹": -13578}
-    best = max((k for k in res if "control" not in k and "IQL" not in k), key=lambda k: res[k].get("total R", -1e9))
-    b = res[best]
-    switch = bool(b["trades"] >= 20 and b["avg R"] > 0 and (b.get("daily t") or 0) > 1.5)
+    eligible = [k for k in res if "control" not in k and "IQL" not in k and res[k].get("trades", 0) >= 20]
+    best = max(eligible, key=lambda k: res[k].get("total R", -1e9)) if eligible else "none (no policy made 20 trades)"
+    b = res.get(best, {})
+    switch = bool(b and b["trades"] >= 20 and b["avg R"] > 0 and (b.get("daily t") or 0) > 1.5)
     cols = [str(c) for c in t.columns]
     lines = ["| Policy | " + " | ".join(cols) + " |", "|" + " --- |" * (len(cols) + 1)]
     for i, r in t.iterrows():
