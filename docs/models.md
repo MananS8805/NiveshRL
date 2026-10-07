@@ -18,11 +18,11 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 | RL allocator (PPO) | Reinforcement learning | research | How a given investor should split money across 29 NIFTY 50 stocks and cash, weekly. | CAGR +0.188 · Sharpe 0.638 · MaxDD -0.331 |
 | Intraday bandit (tabular) | Reinforcement learning | live | TAKE / HALF / SKIP each rule signal by its context's track record. | trades 154 · avg R -0.123 · net ₹ -10,847 |
 | Intraday ML scorer (LightGBM) | Machine learning | live | P(a rule signal ends in profit after costs). | trades 154 · avg R -0.123 · net ₹ -10,847 |
-| Intraday meta-labeler (TCN) | Deep learning | shadow | P(profit) and expected R after costs for a long and a short at every 5-minute bar of every liquid stock. | IC mean -0.013 · IC t -0.70 · top5/day avg R -0.147 |
-| Intraday baseline (LightGBM on the same inputs) | Machine learning | research | The benchmark the TCN must beat on the same labels. | IC mean -0.022 · IC t -1.40 · top5/day avg R -0.048 |
-| Neural-linear Thompson bandit | Reinforcement learning | shadow | Decide TAKE / HALF / SKIP among the meta-labeler's candidates and learn from every outcome. | trades 35.000 · avg R -0.143 · total R -4.116 |
-| Conformal abstention | Statistical | shadow | Trade only when the predicted R stays positive after the model's typical over-optimism. | trades 0.000 · total R +0.000 |
-| Learned exits (implicit Q-learning) | Reinforcement learning | shadow | When to close an open intraday trade instead of a fixed 2R target / stop. | trades 25.000 · avg R -0.232 · diff vs fixed -0.075 |
+| Intraday meta-labeler (TCN) | Deep learning | shadow | P(profit) and expected R after costs for a long and a short at every 5-minute bar of every liquid stock. | IC mean +0.032 · IC t 1.65 · top5/day avg R -0.090 |
+| Intraday baseline (LightGBM on the same inputs) | Machine learning | research | The benchmark the TCN must beat on the same labels. | IC mean +0.013 · IC t 0.65 · top5/day avg R -0.071 |
+| Neural-linear Thompson bandit | Reinforcement learning | shadow | Decide TAKE / HALF / SKIP among the meta-labeler's candidates and learn from every outcome. | trades 53.000 · avg R -0.081 · total R -2.578 |
+| Conformal abstention | Statistical | shadow | Trade only when the predicted R stays positive after the model's typical over-optimism. | trades 2.000 · avg R -0.013 · total R -0.026 |
+| Learned exits (implicit Q-learning) | Reinforcement learning | shadow | When to close an open intraday trade instead of a fixed 2R target / stop. | trades 26.000 · avg R -0.087 · diff vs fixed -0.107 |
 | Swing pick meta-labeler (LightGBM + MLP) | Deep learning | rejected | Predict each swing pick's R to keep only the best half of the daily list. | trades 1,597 · avg R +0.154 · t (per signal day) 3.45 |
 | Opening-range breakout (Zarattini, Barbon & Aziz 2024) | Rules | rejected | Published 'profitable day-trading strategy': trade the direction of the first 5-minute bar in stocks in play. | trades 1,057 · avg R / trade -0.057 · t-stat -0.49 |
 | VWAP trend (Zarattini & Aziz 2023) | Rules | rejected | Long above the session VWAP, short below, re-checked every bar. | trades 472 · avg R / trade -0.141 · net ₹ (₹1L pool) -66,466 |
@@ -177,7 +177,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Training:** Walk-forward by day, refit weekly on all earlier days.
 - **Where it shows:** Intraday agent (v2)
 - **Limits:** ~60 days of 5-minute history (growing daily); no order book.
-- **Measured:** IC mean -0.013 · IC t -0.70 · top5/day avg R -0.147
+- **Measured:** IC mean +0.032 · IC t 1.65 · top5/day avg R -0.090
 
 ### Intraday baseline (LightGBM on the same inputs)
 - **Job:** The benchmark the TCN must beat on the same labels.
@@ -187,7 +187,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Training:** Same walk-forward.
 - **Where it shows:** Comparison only
 - **Limits:** —
-- **Measured:** IC mean -0.022 · IC t -1.40 · top5/day avg R -0.048
+- **Measured:** IC mean +0.013 · IC t 0.65 · top5/day avg R -0.071
 
 ### Neural-linear Thompson bandit
 - **Job:** Decide TAKE / HALF / SKIP among the meta-labeler's candidates and learn from every outcome.
@@ -197,7 +197,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Training:** Updated after every close.
 - **Where it shows:** Intraday agent (v2)
 - **Limits:** Only as good as the features it sits on.
-- **Measured:** trades 35.000 · avg R -0.143 · total R -4.116
+- **Measured:** trades 53.000 · avg R -0.081 · total R -2.578
 
 ### Conformal abstention
 - **Job:** Trade only when the predicted R stays positive after the model's typical over-optimism.
@@ -207,7 +207,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Training:** Rolling daily.
 - **Where it shows:** Intraday agent (v2)
 - **Limits:** With noisy intraday R the margin is large, so it trades rarely.
-- **Measured:** trades 0.000 · total R +0.000
+- **Measured:** trades 2.000 · avg R -0.013 · total R -0.026
 
 ### Learned exits (implicit Q-learning)
 - **Job:** When to close an open intraday trade instead of a fixed 2R target / stop.
@@ -217,7 +217,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Training:** Trained on earlier days' paths, evaluated on later ones.
 - **Where it shows:** Intraday agent (v2)
 - **Limits:** Short history; exits only, the hard stop stays.
-- **Measured:** trades 25.000 · avg R -0.232 · diff vs fixed -0.075
+- **Measured:** trades 26.000 · avg R -0.087 · diff vs fixed -0.107
 
 ### Swing pick meta-labeler (LightGBM + MLP)
 - **Job:** Predict each swing pick's R to keep only the best half of the daily list.
