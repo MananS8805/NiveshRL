@@ -1339,6 +1339,51 @@ E("model_health", "Model health (drift monitor)", "Model quality",
           "percentile.", use="Tells you when to trust the stacked view less.", related=["ic", "stacked_model"],
   aliases=["Rolling 60-day rank IC with next-day returns (higher = better; 0 = no skill)",
            "Model health: rolling 60-day skill (rank IC with next-day returns)"])
+E("agent_why", "Why the agent traded or skipped", "Desk",
+  "Every signal of the day grouped by what happened to it: taken, skipped because round-trip costs would exceed 0.2R "
+  "(the stop was too tight), skipped by the ML scorer, skipped or halved by what the bandit learned, or blocked by a "
+  "guardrail; and, after the close, what each group would have made at full size (its shadow outcome).",
+  reading="A group of skips with a negative would-be R is money the agent saved; a positive one is profit it missed. "
+          "Few trades on a day when the skipped signals would have lost is the learner working, not failing.",
+  use="Answers 'why only one trade today?' with numbers.", related=["agent_trade", "agent_bandit", "agent_mistakes"],
+  aliases=["signals", "share", "would-be avg R", "would-be total R", "Why it traded or skipped (latest day)"])
+E("agent_mistakes", "Intraday mistakes", "Desk",
+  "Tags for losing signals: stopped in the first bar, against NIFTY's trend, costs ate it, late in the day, faded a gap, "
+  "chased an extended move. For each: how often it appears in losses vs in wins (lift), the average R with and without "
+  "it, and its share of losses in the earlier vs the recent half of the history.",
+  reading="A lift well above 1 is a real mistake pattern to avoid; a lift near 1 means the tag is just as common in "
+          "winners, so avoiding it would not help. The recent-half column shows whether the learner is making it less.",
+  caveat="Measured so far: every tag has a lift near 1, i.e. the losses come from the rule setups themselves rather than "
+         "from one avoidable habit; that is why the deep-learning engine looks for better entries instead.",
+  related=["agent_why", "agent_engines"],
+  aliases=["losses with it", "in losses", "in wins", "lift", "avg R with it", "avg R without", "earlier half",
+           "recent half", "meaning", "Mistakes: what losing signals have in common (vs winning ones)"])
+E("agent_engines", "Intraday engines v1 and v2", "Desk",
+  "v1 trades six rule setups filtered by costs, a tabular bandit and a LightGBM scorer. v2 replaces the rules with a "
+  "temporal convolutional network that scores every in-play stock's every 5-minute bar (long and short) for expected R "
+  "after costs, with stops wide enough that costs stay under 0.2R, a 2R target and a 60-minute time exit; optionally a "
+  "neural Thompson-sampling bandit, conformal abstention and learned exits, as measurement selected.",
+  how="Both run every market day on separate ₹1 lakh paper pools with the same costs and guardrails. Which one is live "
+      "and which is 'shadow' is decided by walk-forward measurement (report/results/intraday_v2.md), never by hand.",
+  use="Compares a rules-based and a deep-learning intraday trader on the same days, after costs.",
+  caveat="Five-minute Yahoo bars only (no order book); about 60 days of history at the start, growing daily. A few weeks "
+         "of results prove nothing either way.", related=["agent_trade", "model_card", "agent_why"],
+  aliases=["v2 status", "v2 pool", "v2 today", "v2 days", "Policy", "v1 net", "v2 net", "v1 trades", "v2 trades",
+           "v2 candidates", "v2 candidates avg R", "Live agent (v1)", "v1 replay (52 days)", "Best v2 policy",
+           "DL meta-labeler IC", "Area", "Result", "Decision", "Deep-learning engine (v2)",
+           "Every improvement tried, measured out of sample", "Intraday agent (minutes to hours)",
+           "v2 open positions and today's trades", "v1 vs v2, day by day (₹ net after costs)"])
+E("model_card", "Model card", "Model quality",
+  "For each model in the app: the job it does, its architecture and why that architecture suits the job, its inputs, "
+  "how and how often it is trained, where its output appears, its limits, its status, and its measured out-of-sample "
+  "record read from report/results/.",
+  reading="Status: live = drives what you see; shadow = runs and is measured, not yet trusted; research = kept as a "
+          "benchmark; rejected = measured and found not to help.",
+  use="Shows which deep-learning approaches earn their place and which do not, with the evidence.",
+  related=["stacked_model", "model_health", "agent_engines"],
+  aliases=["Model", "Models", "Live", "Shadow", "Research", "Rejected", "Family", "Status", "Job", "Measured record", "Used in",
+           "How they connect (data → models → screens)", "Swing picks (days to weeks)", "Swing picks, 2015-26",
+           "Random picks", "Edge", "Meta-label filter"])
 E("watchlist_tier", "Watchlist tier", "Desk", "★ Must have = your highest-priority stocks; ☆ Preferred = on your radar.",
   aliases=["Tier"], related=["alerts"])
 E("alerts", "Watchlist alerts", "Desk",

@@ -160,7 +160,7 @@ class Account:
                 target = fill + g["target_r"] * dist if sig.side == "long" else fill - g["target_r"] * dist
                 t = Trade(sig.ticker, sig.setup, sig.side, action, str(sig.ts), str(b.index[k]), round(fill, 2),
                           round(sig.stop, 2), round(target, 2), qty, prob=prob, why=why)
-                open_pos.append({"t": t, "k0": k, "dist": dist})
+                open_pos.append({"t": t, "k0": k, "dist": dist, "exit_policy": getattr(sig, "exit_policy", None)})
                 log.append(entry | {"event": "entry", "detail": f"{qty} @ ₹{fill:,.2f}, stop ₹{sig.stop:,.2f}, target ₹{target:,.2f}"})
             # (3) exits on bar k
             for pos in list(open_pos):
@@ -168,6 +168,12 @@ class Account:
                 if k >= len(b):
                     continue
                 t = pos["t"]
+                te = g.get("time_exit_bars")                   # v2: time barrier (exit at the open N bars after entry)
+                ex = pos.get("exit_policy")                    # v2: learned exit, decided at the previous bar's close
+                if (te and k - pos["k0"] >= te) or (ex is not None and k > pos["k0"] and ex(pos, k - 1, b)):
+                    realized += self._close(pos, k, b, "time" if te and k - pos["k0"] >= te else "learned exit", trades)
+                    open_pos.remove(pos)
+                    continue
                 hi, lo, op = float(b["high"].iloc[k]), float(b["low"].iloc[k]), float(b["open"].iloc[k])
                 if t.side == "long":
                     if lo <= t.stop:

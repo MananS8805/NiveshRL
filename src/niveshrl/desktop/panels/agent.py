@@ -104,6 +104,15 @@ class AgentPanel(Panel):
                  "prob": "{:.0%}", "qty": "{:,.0f}"}
         tw = QWidget()
         tl = QVBoxLayout(tw)
+        tl.addWidget(h2("Why it traded or skipped (latest day)", "agent_why"))
+        self.why = FrameTable(fmt={"signals": "{:,.0f}", "share": "{:.0%}", "would-be avg R": "{:+.2f}",
+                                   "would-be total R": "{:+.1f}"}, signed={"would-be avg R", "would-be total R"})
+        self.why.model_.term_overrides = {c: "agent_why" for c in ("signals", "share", "would-be avg R",
+                                                                    "would-be total R")}
+        self.why.setMaximumHeight(170)
+        tl.addWidget(self.why)
+        self.why_note = muted("")
+        tl.addWidget(self.why_note)
         tl.addWidget(h2("Open positions"))
         self.positions = FrameTable(fmt=money, signed={"unrealized"})
         self.positions.model_.term_overrides = AGENT_TERMS
@@ -133,11 +142,43 @@ class AgentPanel(Panel):
         self.buckets = FrameTable(fmt={"avg R": "{:+.2f}", "t-stat": "{:+.1f}", "signals": "{:,.0f}"}, signed={"avg R"})
         self.buckets.model_.term_overrides = AGENT_TERMS
         ll.addWidget(self.buckets, 2)
+        ll.addWidget(h2("Mistakes: what losing signals have in common (vs winning ones)", "agent_mistakes"))
+        self.mistakes = FrameTable(fmt={"losses with it": "{:,.0f}", "in losses": "{:.0%}", "in wins": "{:.0%}",
+                                        "lift": "{:.2f}", "avg R with it": "{:+.2f}", "avg R without": "{:+.2f}",
+                                        "earlier half": "{:.0%}", "recent half": "{:.0%}"},
+                                   signed={"avg R with it", "avg R without"})
+        self.mistakes.model_.term_overrides = {c: "agent_mistakes" for c in (
+            "losses with it", "in losses", "in wins", "lift", "avg R with it", "avg R without", "earlier half",
+            "recent half", "meaning")}
+        self.mistakes.setMaximumHeight(200)
+        ll.addWidget(self.mistakes)
         ll.addWidget(h2("Learning log (what changed and why)"))
         self.learnlog = FrameTable()
         self.learnlog.model_.term_overrides = AGENT_TERMS
         ll.addWidget(self.learnlog, 1)
         self.tabs.addTab(lw, "Learning")
+        vw = QWidget()
+        vl = QVBoxLayout(vw)
+        vl.addWidget(muted("v2 trades its own ₹1 lakh paper pool beside v1 every market day: a temporal convolutional "
+                           "network scores every in-play stock's every 5-minute bar (long and short, expected R after "
+                           "costs), entries are taken in time order above a threshold calibrated on recent days, with "
+                           "ATR stops wide enough that costs stay under 0.2R, a 2R target and a 60-minute time exit. "
+                           "It is 'shadow' until it beats v1 on measured evidence (Performance → Overview)."))
+        self.v2_kpis = KpiRow(cols=6)
+        vl.addWidget(self.v2_kpis)
+        vl.addWidget(h2("v2 open positions and today's trades", "agent_engines"))
+        self.v2_pos = FrameTable(fmt=money, signed={"unrealized", "net", "r"})
+        self.v2_pos.model_.term_overrides = AGENT_TERMS
+        vl.addWidget(self.v2_pos, 1)
+        vl.addWidget(h2("v1 vs v2, day by day (₹ net after costs)", "agent_engines"))
+        self.v2_days = FrameTable(fmt={"v1 net": "₹{:+,.0f}", "v2 net": "₹{:+,.0f}", "v1 trades": "{:,.0f}",
+                                       "v2 trades": "{:,.0f}", "v2 candidates": "{:,.0f}",
+                                       "v2 candidates avg R": "{:+.2f}"},
+                                  signed={"v1 net", "v2 net", "v2 candidates avg R"})
+        self.v2_days.model_.term_overrides = {c: "agent_engines" for c in ("v1 net", "v2 net", "v1 trades", "v2 trades",
+                                                                            "v2 candidates", "v2 candidates avg R")}
+        vl.addWidget(self.v2_days, 1)
+        self.tabs.addTab(vw, "Deep-learning engine (v2)")
         rw = QWidget()
         rl = QVBoxLayout(rw)
         self.replay_kpis = KpiRow(cols=6)
@@ -220,6 +261,8 @@ class AgentPanel(Panel):
         lg = pd.DataFrame(live.get("log", []))
         self.decisions.set_frame(lg.reindex(columns=["ts", "ticker", "setup", "side", "event", "action", "prob", "why", "detail"])
                                  if len(lg) else pd.DataFrame({"": ["No decisions yet today."]}))
+        self._why(live, days)
+        self._v2(days)
         self.days.set_frame(days.drop(columns=["learned"], errors="ignore") if len(days) else
                             pd.DataFrame({"": ["No trading days yet. Start the agent during market hours (09:15–15:30)."]}))
         while self.hl.count() > 1:
@@ -241,6 +284,61 @@ class AgentPanel(Panel):
             self.buckets.set_frame(pd.DataFrame({"": ["Nothing learned yet."]}))
             self.learnlog.set_frame(pd.DataFrame())
         self._replay()
+
+    def _v2(self, v1_days: pd.DataFrame) -> None:
+        root = ID.DIR / "v2"
+        st, lv = _json(root / "state.json") or {}, _json(root / "live.json") or {}
+        start = float(st.get("start_pool", ID.config()["pool"]))
+        pool = float(st.get("pool", start))
+        d2 = pd.DataFrame(st.get("days", []))
+        model = lv.get("model") or {}
+        self.v2_kpis.set_items([
+            ("v2 status", (lv.get("phase") or "not started").upper(), theme.AMBER, (lv.get("message") or "")[:60]),
+            ("v2 pool", f"₹{pool:,.0f}", theme.signed(pool - start), f"{pool / start - 1:+.1%} since start"),
+            ("v2 today", f"₹{lv.get('day_pnl', 0):+,.0f}" if lv.get("phase") == "trading" else "–",
+             theme.signed(lv.get("day_pnl", 0)), f"{lv.get('candidates', 0)} candidates scored"),
+            ("v2 days", str(len(d2)), None, f"{int(d2['trades'].sum()) if len(d2) else 0} trades"),
+            ("Model", f"{model.get('n_train', 0):,} samples" if model else "not trained", None,
+             f"refit {model.get('when', '–')}"),
+            ("Policy", (lv.get("policy") or "top-5 threshold")[:26], None, "chosen by measurement"),
+        ])
+        pos = _with_times(pd.DataFrame(lv.get("positions", []) + lv.get("trades", [])))
+        self.v2_pos.set_frame(pos.reindex(columns=["ticker", "side", "time in", "entry", "stop", "target", "qty", "time out",
+                                                   "exit", "reason", "net", "r", "unrealized", "why"])
+                              if len(pos) else pd.DataFrame({"": ["No v2 positions today."]}))
+        if len(d2):
+            v1 = v1_days.set_index("day")[["net", "trades"]].rename(columns={"net": "v1 net", "trades": "v1 trades"}) \
+                if len(v1_days) else pd.DataFrame()
+            t = d2.set_index("day")[["net", "trades", "candidates", "candidate_avg_r"]].rename(
+                columns={"net": "v2 net", "trades": "v2 trades", "candidates": "v2 candidates",
+                         "candidate_avg_r": "v2 candidates avg R"})
+            self.v2_days.set_frame(t.join(v1, how="left").sort_index(ascending=False))
+        else:
+            self.v2_days.set_frame(pd.DataFrame({"": ["No v2 days yet: it starts with the next live session."]}))
+
+    def _why(self, live: dict, days: pd.DataFrame) -> None:
+        """Skip reasons for today (live) or the latest settled day, with what the skipped signals would have made."""
+        from ...intraday.mistakes import mistake_table, skip_breakdown
+        log, day = live.get("log") or [], live.get("day")
+        if not log and len(days):
+            day = str(days["day"].iloc[-1])
+            log = _json(ID.DIR / f"log_{day}.json") or []
+        sh_all = pd.read_parquet(ID.DIR / "shadow.parquet") if (ID.DIR / "shadow.parquet").exists() else pd.DataFrame()
+        sh = sh_all[sh_all["day"].astype(str) == str(day)] if len(sh_all) and "day" in sh_all else None
+        t = skip_breakdown(log, sh)
+        self.why.set_frame(t if len(t) else pd.DataFrame({"": ["No decisions yet."]}))
+        if len(t) and "would-be total R" in t:
+            skipped = t.drop(index="taken", errors="ignore")
+            tot = skipped["would-be total R"].sum()
+            self.why_note.setText(f"{day}: the {int(skipped['signals'].sum())} skipped signals would together have made "
+                                  f"{tot:+.1f}R at full size: skipping {'saved' if tot < 0 else 'cost'} about "
+                                  f"₹{abs(tot) * float(ID.config()['pool']) * ID.config()['guardrails']['risk_per_trade']:,.0f}. "
+                                  "Few trades on a day like this means the learner is protecting the pool; more trades need "
+                                  "better signals, not looser filters.")
+        else:
+            self.why_note.setText("What skipped signals would have made is known after the close (shadow outcomes).")
+        m = mistake_table(sh_all) if len(sh_all) else pd.DataFrame()
+        self.mistakes.set_frame(m if len(m) else pd.DataFrame({"": ["Not enough outcomes yet."]}))
 
     def _replay(self) -> None:
         root = ID.DIR / "replay"

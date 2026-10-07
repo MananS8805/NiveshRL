@@ -1,4 +1,6 @@
-"""TRACK: did the app's suggestions work out? Forward tracker, historical replay of the monitor list, sentiment test."""
+"""TRACK → Performance: did the app's suggestions work out? An overview of the swing picks and the intraday agent side
+by side (live vs shadow engines, every measured experiment), then the forward tracker, the historical replay of the
+monitor list and the sentiment test."""
 from __future__ import annotations
 
 import pandas as pd
@@ -7,7 +9,7 @@ from PySide6.QtWidgets import QHBoxLayout, QPushButton, QTabWidget, QVBoxLayout,
 from ...config import ROOT
 from ...research import forward as F
 from .. import data, theme
-from ..widgets import FrameTable, KpiRow, line_chart, muted, run_async
+from ..widgets import FrameTable, KpiRow, h2, line_chart, muted, run_async
 from . import Panel, vbox
 
 HIST = ROOT / "report" / "results" / "monitor_history_pit.parquet"
@@ -18,8 +20,16 @@ TERMS = {k: "forward_tracker" for k in ("picks", "closed", "open", "win rate", "
                                          "exit_date", "reason", "days", "rules")} | {"r": "r_multiple"}
 
 
+def _json(name: str) -> dict:
+    import json
+    try:
+        return json.loads((ROOT / "report" / "results" / name).read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
 class TrackPanel(Panel):
-    title = "Track record"
+    title = "Performance"
     code = "TRACK"
 
     def __init__(self, ctx, parent=None):
@@ -31,6 +41,22 @@ class TrackPanel(Panel):
                             "that day's other stocks. Nothing is judged before 100 closed trades per group."))
         self.tabs = QTabWidget()
         lay.addWidget(self.tabs, 1)
+        ow = QWidget()
+        ol = QVBoxLayout(ow)
+        ol.addWidget(h2("Swing picks (days to weeks)", "forward_tracker"))
+        self.o_swing = KpiRow(cols=5)
+        ol.addWidget(self.o_swing)
+        ol.addWidget(h2("Intraday agent (minutes to hours)", "agent_engines"))
+        self.o_intra = KpiRow(cols=5)
+        ol.addWidget(self.o_intra)
+        ol.addWidget(h2("Every improvement tried, measured out of sample", "agent_engines"))
+        self.o_exp = FrameTable()
+        self.o_exp.model_.term_overrides = {c: "agent_engines" for c in ("Area", "Result", "Decision")}
+        ol.addWidget(self.o_exp, 1)
+        ol.addWidget(muted("Swing and intraday are different strategies on different time scales: the swing list is a "
+                           "next-day/technical screen held for days with wide stops; the intraday agent opens and closes "
+                           "within the day, where costs are a much larger share of each trade."))
+        self.tabs.addTab(ow, "Overview")
         fw = QWidget()
         fl = QVBoxLayout(fw)
         self.f_kpis = KpiRow(cols=4)
@@ -78,7 +104,67 @@ class TrackPanel(Panel):
                            "table becomes meaningful after months of daily runs."))
         self.tabs.addTab(sw, "Sentiment test")
 
+    def _overview(self) -> None:
+        import json
+        from ... import intraday as ID
+        hist = pd.read_parquet(HIST) if HIST.exists() else pd.DataFrame()
+        if len(hist):
+            e = F.edge(hist)
+            mon = hist[(hist["group"] == "monitor list") & (hist["status"] == "closed")]
+            rnd = hist[(hist["group"] == "random control") & (hist["status"] == "closed")]
+            self.o_swing.set_items([
+                ("Swing picks, 2015-26", f"{mon['r'].mean():+.3f}R", theme.signed(mon["r"].mean()), f"{len(mon):,} trades after costs"),
+                ("Random picks", f"{rnd['r'].mean():+.3f}R", None, f"{len(rnd):,} trades, same rules"),
+                ("Edge", f"{e['edge R']:+.3f}R", theme.signed(e["edge R"]), f"t {e['t-stat']:.1f}"),
+                ("Win rate", f"{(mon['r'] > 0).mean():.0%}", None, "the median trade still loses"),
+                ("Meta-label filter", "rejected" if not _json("swing_meta_decision.json").get("switch") else "in use",
+                 None, "measured: no improvement"),
+            ])
+        st = {}
+        try:
+            st = json.loads((ID.DIR / "state.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            pass
+        start = float(st.get("start_pool", ID.config()["pool"]))
+        pool = float(st.get("pool", start))
+        dec = _json("intraday_v2_decision.json")
+        bst = dec.get("best_stats", {})
+        self.o_intra.set_items([
+            ("Live agent (v1)", f"₹{pool:,.0f}", theme.signed(pool - start), f"{pool / start - 1:+.1%} · {len(st.get('days', []))} days"),
+            ("v1 replay (52 days)", "−₹10,847", theme.RED, "-0.12R a trade, 154 trades"),
+            ("Best v2 policy", dec.get("best", "not measured")[:28], None,
+             f"{bst.get('avg R', float('nan')):+.3f}R · {bst.get('trades', 0)} trades" if bst else ""),
+            ("v2 status", "live" if dec.get("switch") else "shadow", theme.GREEN if dec.get("switch") else theme.AMBER,
+             "switch rule: avg R > 0, t > 1.5"),
+            ("DL meta-labeler IC", self._dl_ic(), None, "TCN, in-play stocks, walk-forward"),
+        ])
+        rows = []
+        for area, f, key in (("Next-day: monthly vs yearly refit", "refit_decision.json", "monthly_beats_yearly"),
+                             ("Next-day: 4-model stack vs LightGBM", "refit_decision.json", "stack_beats_monthly"),
+                             ("Volatility: monthly refit", "freshness_decision.json", "vol_monthly_better"),
+                             ("Regimes: rolling 8-year window", "freshness_decision.json", "regime_rolling_better"),
+                             ("Swing picks: meta-labeling", "swing_meta_decision.json", "switch"),
+                             ("Intraday: v2 deep-learning engine", "intraday_v2_decision.json", "switch")):
+            d = _json(f)
+            if not d:
+                rows.append({"Area": area, "Result": "not measured yet", "Decision": "–"})
+                continue
+            ok = bool(d.get(key))
+            rows.append({"Area": area, "Result": "better" if ok else "not better", "Decision": "adopted" if ok else "kept the old one"})
+        rows.append({"Area": "Intraday: forgetting (20-day half-life)", "Result": "slightly better (weak)", "Decision": "adopted"})
+        self.o_exp.set_frame(pd.DataFrame(rows).set_index("Area"))
+
+    @staticmethod
+    def _dl_ic() -> str:
+        f = ROOT / "report" / "results" / "intraday_dl.csv"
+        try:
+            t = pd.read_csv(f, index_col=0)
+            return f"{t.loc['TCN, in-play stocks', 'IC mean']:+.3f}"
+        except (OSError, KeyError, ValueError):
+            return "–"
+
     def refresh(self) -> None:
+        self._overview()
         run_async(lambda: F.track_saved_picks(data.panel()), self._show_forward,
                   on_error=lambda m: self.f_kpis.set_items([("Forward tracker", "error", theme.RED, m.splitlines()[-1][:80])]))
         self._show_history()

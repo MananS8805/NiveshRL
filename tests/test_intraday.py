@@ -6,7 +6,6 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from niveshrl.intraday import config
 from niveshrl.intraday.bandit import Bandit
 from niveshrl.intraday.costs import fy_of, round_trip, speculative_tax
 from niveshrl.intraday.setups import Signal, day_signals
@@ -15,7 +14,8 @@ from niveshrl.intraday.sim import SQUARE_OFF_MIN, Account, outcome
 
 @pytest.fixture
 def cfg():
-    c = config()
+    from niveshrl.config import load_yaml
+    c = load_yaml("configs/intraday.yaml")             # the shipped defaults, never the user's saved settings
     c["pool"], c["leverage"] = 100_000.0, 1.0
     return c
 

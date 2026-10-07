@@ -2,6 +2,8 @@
 # Every number is used by src/niveshrl/intraday/*. Change them here, not in code.
 
 pool: 100000                  # virtual capital in Rs (editable in the app)
+engine: shadow                # v1 = rule setups only; shadow = v1 live + the deep-learning v2 engine as a second paper
+                              # account (compared day by day); v2 = v2 only. Set by measurement, see intraday_v2.md
 leverage: 1.0                 # 1 = no leverage (default). The app can toggle 1x-5x (MIS-style exposure).
 max_leverage: 5.0
 

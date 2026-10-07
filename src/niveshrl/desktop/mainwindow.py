@@ -28,6 +28,7 @@ from . import data, theme
 from .panels import Panel
 from .explain import ExplainPanel
 from .panels.agent import AgentPanel
+from .panels.models import ModelsPanel
 from .panels.alerts import AlertsPanel, stock_snapshot
 from .panels.track import TrackPanel
 from .panels.desk import DeskPanel
@@ -111,13 +112,13 @@ class TickerStrip(QWidget):
 
 
 PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
-          AlertsPanel, GlossaryPanel, DeskPanel, AgentPanel, TrackPanel]
+          AlertsPanel, GlossaryPanel, DeskPanel, AgentPanel, TrackPanel, ModelsPanel]
 # Sidebar order: (code, label). Ctrl+1 … Ctrl+0 jump to these in order.
 NAV = [("MKT", "Market"), ("TODAY", "Today"), ("SCRN", "Screener"), ("WATCH", "Watchlist"), ("DESK", "My desk"),
-       ("ALGO", "Intraday agent"), ("TRACK", "Track record"),
+       ("ALGO", "Intraday agent"), ("TRACK", "Performance"),
        ("DES", "Stock"),
        ("RANK", "Rankers"), ("LAB", "Backtest lab"), ("RISK", "Risk"), ("PLAN", "RL & plan"), ("ALRT", "Alerts"),
-       ("GLOS", "Glossary")]
+       ("MODELS", "Models"), ("GLOS", "Glossary")]
 
 
 class MainWindow(QMainWindow):

@@ -36,6 +36,15 @@ def _write_status(obj: dict) -> None:
     tmp.replace(p)
 
 
+def _v2_status(obj: dict) -> None:
+    d = DIR / "v2"
+    d.mkdir(parents=True, exist_ok=True)
+    p = d / "live.json"
+    tmp = p.with_suffix(".tmp")
+    tmp.write_text(json.dumps(obj, indent=1, default=str), encoding="utf-8")
+    tmp.replace(p)
+
+
 def today_bars(tickers: list[str], batch: int = 100) -> dict[str, pd.DataFrame]:
     import yfinance as yf
     out = {}
@@ -107,6 +116,16 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
     tickers = u.index.tolist()
     decisions: dict = {}
     dec_path = DIR / f"decisions_{day}.json"
+    v2, v2_frozen, v2_path = None, {}, DIR / "v2" / f"decisions_{day}.json"
+    if cfg.get("engine", "shadow") in ("shadow", "v2"):          # the deep-learning engine runs beside v1, never instead
+        try:
+            from .engine_v2 import EngineV2
+            v2 = EngineV2(cfg)
+            if v2_path.exists():
+                v2_frozen = json.loads(v2_path.read_text(encoding="utf-8"))
+        except Exception as e:                                   # noqa: BLE001 - v2 must never stop v1
+            v2 = None
+            _v2_status({"phase": "error", "day": day, "message": f"v2 unavailable: {e}"})
     if dec_path.exists():
         decisions = json.loads(dec_path.read_text(encoding="utf-8"))
     last_bar = None
@@ -155,6 +174,17 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
                        "log": log[-200:], "leverage": cfg["leverage"],
                        "message": f"Following {len({s.ticker for s in sigs})} in-play stocks; "
                                   f"{len(acct.open_positions)} open, {len(trades)} closed today."})
+        if v2 is not None:
+            try:
+                cand, t2, lg2, a2 = v2.run(bars, ctx, nifty, v2_frozen, close_at_end=False)
+                v2_path.write_text(json.dumps(v2_frozen), encoding="utf-8")
+                _v2_status({"phase": "trading", "day": day, "at": now_ist().isoformat(timespec="seconds"),
+                            "pool": v2.state["pool"], "candidates": int(len(cand)), "positions": a2.open_positions,
+                            "trades": [t.to_dict() for t in t2], "log": lg2[-200:],
+                            "day_pnl": round(sum(t.net for t in t2) + sum(p["unrealized"] for p in a2.open_positions), 2),
+                            "model": v2.meta, "policy": v2.policy})
+            except Exception as e:                               # noqa: BLE001
+                _v2_status({"phase": "error", "day": day, "message": f"v2 error: {e}"})
         sleep(5)
     # after 15:20: settle and learn on the full day
     bars = finished(today_bars(tickers), now_ist())
@@ -165,6 +195,22 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
                 if b.index[0] <= nifty.index[min(2, len(nifty) - 1)]}
     res, trades, log = agent.trade_day(day, bars, ctx, nifty, learn=True, decisions=decisions)
     dec_path.write_text(json.dumps(decisions), encoding="utf-8")
+    try:                                                         # grow the 5-minute history beyond Yahoo's 60 days
+        from .dl.dataset import archive_day
+        long = pd.concat([b.assign(ticker=t).rename_axis("ts").reset_index() for t, b in bars.items()]
+                         + ([nifty.assign(ticker="^NSEI").rename_axis("ts").reset_index()] if nifty is not None else []))
+        archive_day(long[["ticker", "ts", "open", "high", "low", "close", "volume"]])
+    except Exception:                                            # noqa: BLE001
+        pass
+    if v2 is not None:
+        try:
+            rec = v2.settle(day, bars, ctx, nifty, v2_frozen)
+            from .engine_v2 import refit_if_due
+            note = refit_if_due(cfg)
+            _v2_status({"phase": "closed", "day": day, "at": now_ist().isoformat(timespec="seconds"), "result": rec,
+                        "pool": v2.state["pool"], "message": f"v2 settled: net ₹{rec['net']:+,.0f}; {note}"})
+        except Exception as e:                                   # noqa: BLE001
+            _v2_status({"phase": "error", "day": day, "message": f"v2 settle error: {e}"})
     _write_status({"phase": "closed", "day": day, "at": now_ist().isoformat(timespec="seconds"), "result": res.to_dict(),
                    "trades": [t.to_dict() for t in trades], "log": log[-200:], "pool": agent.state["pool"],
                    "message": f"Day settled: net ₹{res.net:+,.0f} after ₹{res.costs:,.0f} costs; learned "
