@@ -1373,6 +1373,60 @@ E("agent_engines", "Intraday engines v1 and v2", "Desk",
            "DL meta-labeler IC", "Area", "Result", "Decision", "Deep-learning engine (v2)",
            "Every improvement tried, measured out of sample", "Intraday agent (minutes to hours)",
            "v2 open positions and today's trades", "v1 vs v2, day by day (₹ net after costs)"])
+E("copilot", "Intraday copilot", "Desk",
+  "A lighter intraday assistant: before the open it writes a brief and a watchlist; during the session it scans the 150 "
+  "most liquid NSE stocks for four structural setups (15-minute opening-range breakout, VWAP hold, relative-strength "
+  "breakout, trend-day pullback), scores each with a calibrated P(win after costs) and takes at most 3 paper trades; "
+  "after the close it reviews the day and may tune its own rules.",
+  how="Runs inside the intraday agent's market-hours process (09:05 brief, decisions from 09:20, review after 15:20). "
+      "Stops sit at structural levels (at least 0.3% of price) so costs stay a small part of 1R; 1% risk per trade; a 2% "
+      "daily loss stop; square-off 15:15.",
+  reading="Copilot pool and today: the paper account. Backtest verdict: how many of the seven money tests the replay "
+          "passed. Forward trades: paper trades since it went live (no verdict before 50).",
+  caveat="Paper only. Its replay did not pass the money tests: treat every card as information, not a recommendation.",
+  related=["copilot_card", "copilot_review", "copilot_scorecard", "copilot_rules"],
+  aliases=["Copilot pool", "Copilot today", "Copilot setups today", "Copilot forward trades", "Copilot backtest verdict",
+           "Copilot run mode"])
+E("copilot_brief", "Copilot morning brief", "Desk",
+  "Written at 09:05 on weekdays: NIFTY's last day, five days and position vs its 20-day average, India VIX, yesterday's "
+  "copilot result, the active rules and the day's risk plan, plus a watchlist of liquid stocks with a reason to watch "
+  "(NR7 or inside day, a close at the high or low on heavy volume, a 3%+ move) and their levels (previous high, low, "
+  "close, average daily range). After 09:30 it adds each name's gap and 15-minute opening range.",
+  reading="PDH / PDL: previous day's high / low. ADR: average daily range in % of price. rvol: yesterday's volume vs its "
+          "20-day average. OR high / low / width: the 09:15-09:30 opening range.", related=["copilot"],
+  aliases=["Morning brief", "Watchlist and opening levels", "why", "bias", "PDH", "PDL", "ADR", "rvol", "gap", "OR high",
+           "OR low", "OR width", "change", "close"])
+E("copilot_card", "Copilot setup card", "Desk",
+  "One setup on one stock at one bar: entry reference (the signal bar's close; the paper fill is the next bar's open), the "
+  "structural stop, P(win) from the LightGBM model (calibrated: P(the trade ends positive after costs)), cost R (round-trip "
+  "costs as a share of the risk) and whether it passed the rules, with the reason.",
+  reading="Taken: passed the rules and fit within 3 trades a day. Below bar: shown for awareness only. After the close "
+          "every card gets r (its full-size result in R after costs), taken or not: that is what the copilot learns from.",
+  related=["copilot", "copilot_rules"],
+  aliases=["Best setups right now (always three; ✗ = below the bar, for awareness only)", "Paper trades today (open and closed)",
+           "P(win)", "cost R", "stop %"])
+E("copilot_review", "Copilot day review", "Desk",
+  "After the close: the day's trades and net after costs, what taking every setup would have made, which setups and sides "
+  "worked or failed (at least 3 setups, mean R clearly away from zero), whether skipping was right, missed winners, trades "
+  "stopped within 10 minutes, the cost share of the gross move, and every rule the learner changed with its evidence.",
+  related=["copilot_rules", "copilot"], aliases=["Strengths", "Weaknesses", "Learnings → rules for tomorrow"])
+E("copilot_scorecard", "Copilot money scorecard", "Model quality",
+  "Seven tests a strategy must pass before it deserves real money: at least 50 trades; positive on untouched holdout days; "
+  "the 90% bootstrap lower bound of mean daily P&L above zero (stationary block bootstrap); deflated Sharpe at least 0.95 "
+  "(beats the best Sharpe that many tried variants would show by luck); probability of backtest overfitting below 0.5 "
+  "(combinatorially symmetric cross-validation); beats random entries matched on day, bar, side and stop width "
+  "(p below 0.05); still positive with slippage doubled.",
+  reading="MONEY-READY = all seven. PROMISING = five or six. NOT READY = fewer. The forward paper record uses the same "
+          "bootstrap and needs 50 trades before any verdict.",
+  caveat="Four months of 5-minute Yahoo bars and modelled fills; one market regime.", related=["copilot", "model_card"])
+E("copilot_rules", "Copilot rules and learning", "Desk",
+  "The only values the learner may change: whether each setup is active, each setup's minimum P(win), and the last entry "
+  "time. A setup is benched only when at least 30 outcomes over at least 8 days average below zero with a per-day t of -2 "
+  "or lower, and restored on 20+ outcomes averaging above +0.05R with t of 1 or more; a probability bar moves one step a "
+  "day, only when the cards that step adds or drops clearly win or lose (20+ cards, |t| of 1.5 or more). Risk per trade, "
+  "3 trades a day, the daily loss stop and square-off are fixed.",
+  reading="n: outcomes behind a change. mean R: their average result in R after costs. t: per-day t-statistic.",
+  related=["copilot_card", "copilot_review"], aliases=["Every rule change and its evidence", "min P(win)"])
 E("model_card", "Model card", "Model quality",
   "For each model in the app: the job it does, its architecture and why that architecture suits the job, its inputs, "
   "how and how often it is trained, where its output appears, its limits, its status, and its measured out-of-sample "

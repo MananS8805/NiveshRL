@@ -1,0 +1,46 @@
+# Intraday copilot (src/niveshrl/intraday/copilot). Paper only: nothing here ever places an order.
+# The learner (tuner.py) may only change the values under `rules`; `guardrails` are fixed and never tuned.
+
+universe:
+  top_liquid: 150             # most-traded stocks by 20-day average turnover (low slippage, cheap relative costs)
+  min_price: 100
+
+guardrails:                   # fixed: the tuner can never change these
+  risk_per_trade: 0.01        # pool share lost if a stop is hit
+  max_trades_per_day: 3
+  max_open_positions: 3
+  daily_loss_stop: 0.02       # no new trades once the day is down 2% of the pool
+  no_new_after: "14:30"
+  square_off: "15:15"
+  max_volume_share: 0.02
+  min_stop_pct: 0.003         # structural stops, floored at 0.3% so costs stay a small part of R
+  max_stop_pct: 0.015
+  target_r: 2.0
+  cost_r_max: 0.15
+
+rules:                        # starting values; tuned within bounds from evidence, every change logged
+  setups:
+    orb15: {enabled: true, min_p: 0.45}
+    vwap_hold: {enabled: true, min_p: 0.45}
+    rs_breakout: {enabled: true, min_p: 0.45}
+    trend_pullback: {enabled: true, min_p: 0.45}
+  last_entry: "14:30"
+
+tuning:
+  window_days: 20             # evidence window (trading days) for every rule change
+  min_cards_disable: 30       # a setup is benched only on >= 30 outcomes with t <= -2
+  disable_t: -2.0
+  min_cards_enable: 20        # ... and brought back on >= 20 outcomes with mean R > 0.05 and t >= 1
+  enable_t: 1.0
+  p_grid: [0.40, 0.45, 0.50, 0.55, 0.60]
+  min_cards_threshold: 20     # a probability bar moves one step only when the cards it would drop / add number >= 20,
+  min_gain_r: 0.05            # average beyond 0.05R the right way,
+  threshold_t: 1.5            # with |t| >= 1.5 (the first, looser tuner chased noise in the replay: rejected)
+  late_cutoffs: ["13:30", "14:00", "14:30"]
+
+model:
+  refit_every_days: 5
+  min_train_days: 15
+
+forward:
+  min_trades_verdict: 50      # no money verdict before this many forward trades

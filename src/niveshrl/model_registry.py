@@ -224,6 +224,21 @@ CARDS: list[ModelCard] = [
               "One of the most popular published short-term rules.", "Daily prices.", "No training.", "Comparison only",
               "High win rate but tiny average gains: costs and crash drawdowns erase them.", "rejected",
               _r("industry_rules.csv", "Connors RSI(2) mean reversion", ["CAGR", "Sharpe", "max drawdown"])),
+    ModelCard("copilot_lgbm", "Intraday copilot: setup scorer (LightGBM) + evidence tuner", "Machine learning",
+              "Score each copilot setup card with P(it ends positive after NSE costs); the tuner benches setups and moves "
+              "probability bars from the evidence of every card.",
+              "LightGBM, 200 trees, 15 leaves, isotonic calibration on the latest fifth of training days; tuner = "
+              "bounded rule changes with per-day clustered t-tests.",
+              "Hundreds to a few thousand labelled cards and 13 tabular features: boosted trees are the strongest small-"
+              "data tabular learner, train in seconds on CPU and need no PyTorch (the copilot stays lightweight). The "
+              "measured TCN did not justify its weight for this job.",
+              "Setup, side, minute, gap, relative volume, volume pace, VWAP distance, stop width, strength vs NIFTY, NIFTY "
+              "trend, range used, position in the day's range, EMA spread, ADR, cost in R.",
+              "Walk-forward by day; refit every 5 trading days on all cards (replay + live).",
+              "Intraday copilot (cards, Rules & learning, Scorecard)",
+              "Replay over 66 evaluation days did not pass the money tests (1/7); no variant beat matched random entries. "
+              "Paper only until the forward record passes.", "shadow",
+              _r("copilot_benchmark.csv", "adaptive (live policy) · 2R", ["trades", "net", "holdout_net", "net_2x_costs"])),
 ]
 
 

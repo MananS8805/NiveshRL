@@ -36,6 +36,10 @@ New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\replay") | O
 if (Test-Path "data\intraday\universe.csv") { Copy-Item "data\intraday\universe.csv" (Join-Path $Seed "data\intraday\universe.csv") }
 New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\dl") | Out-Null      # v2: the trained TCN
 if (Test-Path "data\intraday\dl\tcn_latest.pkl") { Copy-Item "data\intraday\dl\tcn_latest.pkl" (Join-Path $Seed "data\intraday\dl\tcn_latest.pkl") }
+New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\copilot") | Out-Null   # copilot: replay evidence, model, rules
+foreach ($f in @("cards.parquet", "model.pkl", "rules.json")) {
+    if (Test-Path "data\intraday\copilot\$f") { Copy-Item "data\intraday\copilot\$f" (Join-Path $Seed "data\intraday\copilot\$f") }
+}
 foreach ($f in @("state.json", "trades.csv", "bandit.json", "scorer.pkl", "shadow.parquet")) {
     if (Test-Path "data\intraday\replay\$f") { Copy-Item "data\intraday\replay\$f" (Join-Path $Seed "data\intraday\replay\$f") }
 }

@@ -86,10 +86,13 @@ def main(argv: list[str] | None = None) -> int:
     app.setOrganizationName("NiveshRL")
     app.setQuitOnLastWindowClosed(False)
 
-    # single instance: a second launch asks the first to show itself
+    # single instance: a second launch asks the first to show itself (a --tray launch, e.g. the 09:00 scheduled task,
+    # just exits quietly when the app is already running)
     sock = QLocalSocket()
     sock.connectToServer("NiveshRL-desk")
     if sock.waitForConnected(300):
+        if args.tray:
+            return 0
         sock.write(b"show")
         sock.flush()
         sock.waitForBytesWritten(300)

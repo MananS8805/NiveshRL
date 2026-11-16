@@ -125,6 +125,39 @@ never places an order.**
   the signals were roughly breakeven: on tight intraday stops, costs (~0.25R per trade) exceed the edge. **Live paper
   trading over months is the real test**; no verdict before 100 closed trades.
 
+**Intraday copilot** (`Intraday copilot` screen; [intraday/copilot/](src/niveshrl/intraday/copilot)). A lighter
+assistant built after the agent's results, modelled on what retail intraday tools actually sell (a scanner, levels, risk
+sizing and discipline) rather than on prediction alone. **Paper only.**
+- *09:05:* a morning brief: NIFTY and India VIX context, yesterday's result, today's active rules and risk plan, and a
+  watchlist of liquid stocks with a reason (NR7 / inside day, a close at the high or low on heavy volume, a 3%+ move)
+  and their levels; after 09:30 each name's gap and 15-minute opening range.
+- *09:20-14:30:* the 150 most liquid stocks are scanned every 5 minutes for four structural setups (15-minute ORB, VWAP
+  hold, relative-strength breakout, trend-day pullback) with stops at structural levels (≥ 0.3%, so costs stay a small
+  part of 1R). Each card gets a calibrated LightGBM P(win after costs); at most 3 paper trades a day, 1% risk each, a 2%
+  daily loss stop, square-off 15:15. The best three cards are always shown, labelled when below the bar.
+- *15:20:* every card (taken or not) gets its outcome; the day review lists the summary, strengths, weaknesses, missed
+  winners and **learnings**: bounded rule changes (bench / restore a setup, move a probability bar one step, the last
+  entry time) made only on evidence over ≥ 8 days with per-day t-statistics, each logged with n, mean R and t. Risk
+  limits are never tuned. Windows notifications announce the brief and the review.
+- *Runs by itself* on weekdays while NiveshRL is open (tick *Run automatically*); `scripts/schedule_copilot.ps1` registers
+  a 09:00 task that opens NiveshRL in the tray and may wake the laptop.
+
+**Money benchmarks** ([research/robust.py](src/niveshrl/research/robust.py), `python scripts/copilot_benchmark.py`). A
+positive backtest is not evidence by itself, so every strategy now faces seven checks: ≥ 50 trades; positive on untouched
+holdout days; the 90% stationary-bootstrap lower bound of mean daily P&L above zero; deflated Sharpe ≥ 0.95 over all
+variants tried (Bailey & López de Prado 2014); probability of backtest overfitting < 0.5 (CSCV, Bailey et al. 2017);
+beating random entries matched on day, bar, side and stop width (p < 0.05); and staying positive with slippage doubled.
+*Measured* (87 days of 5-minute bars, Jul-Nov 2026, point-in-time universe, 66 evaluation days, 15 variants including
+two rejected versions of the tuner): **no variant is money-ready.** The live policy passed 1/7 (net −₹14,563, holdout
+−₹6,993, matched-random p 0.77, PBO 0.65); the best variant on the design half lost on the holdout. Per-setup average R
+was between −0.09 and +0.03. One variant (rules only, hold to close) was positive in both halves; it was noticed after
+seeing the holdout, so it is tracked as a forward hypothesis on live days, not traded. Full report:
+[report/results/copilot_benchmark.md](report/results/copilot_benchmark.md).
+
+**Broker extension point** ([brokers.py](src/niveshrl/brokers.py), `configs/broker.yaml`). Order-placing code talks to a
+`Broker` interface. Only the paper account is implemented; Zerodha, Upstox, Fyers and Angel One are named slots that
+report "not connected" and refuse every order.
+
 ## Desktop app (Windows)
 
 ```bash
@@ -224,6 +257,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 | VWAP trend (Zarattini & Aziz 2023) | Rules | rejected | Long above the session VWAP, short below, re-checked every bar. | trades 472 · avg R / trade -0.141 · net ₹ (₹1L pool) -66,466 |
 | Turtle / Donchian 55-20 breakout | Rules | research | Classic trend following: buy a close above the 55-day high, sell a close below the 20-day low. | CAGR +0.128 · Sharpe 0.752 · max drawdown -0.347 |
 | Connors RSI(2) mean reversion | Rules | rejected | Buy short dips in uptrends: close > 200-day average and 2-day RSI < 10; sell when close > 5-day average. | CAGR -0.005 · Sharpe 0.064 · max drawdown -0.589 |
+| Intraday copilot: setup scorer (LightGBM) + evidence tuner | Machine learning | shadow | Score each copilot setup card with P(it ends positive after NSE costs); the tuner benches setups and moves probability bars from the evidence of every card. | trades 115 · net -14,563 · holdout_net -6,993 · net_2x_costs -20,704 |
 
 ### FFNN ranker (Takeuchi & Lee)
 - **Job:** Rank all NIFTY 200 stocks by the chance of beating the median over the next month.
@@ -464,6 +498,16 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Where it shows:** Comparison only
 - **Limits:** High win rate but tiny average gains: costs and crash drawdowns erase them.
 - **Measured:** CAGR -0.005 · Sharpe 0.064 · max drawdown -0.589
+
+### Intraday copilot: setup scorer (LightGBM) + evidence tuner
+- **Job:** Score each copilot setup card with P(it ends positive after NSE costs); the tuner benches setups and moves probability bars from the evidence of every card.
+- **Architecture:** LightGBM, 200 trees, 15 leaves, isotonic calibration on the latest fifth of training days; tuner = bounded rule changes with per-day clustered t-tests.
+- **Why this architecture:** Hundreds to a few thousand labelled cards and 13 tabular features: boosted trees are the strongest small-data tabular learner, train in seconds on CPU and need no PyTorch (the copilot stays lightweight). The measured TCN did not justify its weight for this job.
+- **Inputs:** Setup, side, minute, gap, relative volume, volume pace, VWAP distance, stop width, strength vs NIFTY, NIFTY trend, range used, position in the day's range, EMA spread, ADR, cost in R.
+- **Training:** Walk-forward by day; refit every 5 trading days on all cards (replay + live).
+- **Where it shows:** Intraday copilot (cards, Rules & learning, Scorecard)
+- **Limits:** Replay over 66 evaluation days did not pass the money tests (1/7); no variant beat matched random entries. Paper only until the forward record passes.
+- **Measured:** trades 115 · net -14,563 · holdout_net -6,993 · net_2x_costs -20,704
 
 <!-- models:end -->
 

@@ -98,6 +98,74 @@ def context_from_universe(u: pd.DataFrame) -> dict[str, dict]:
     return {t: {c: float(r[c]) for c in cols} for t, r in u.iterrows()}
 
 
+def _cp_status(obj: dict) -> None:
+    from .copilot import save_json
+    save_json("live.json", obj)
+
+
+class _CopilotDay:
+    """The copilot runs beside v1/v2 in the same loop; any copilot error is reported and never stops the others."""
+
+    def __init__(self, u, day: str):
+        self.ok, self.day = False, day
+        try:
+            from .copilot import CDIR, config as cp_config
+            from .copilot.engine import Copilot, liquid
+            self.cp = Copilot(cp_config())
+            self.tickers = set(liquid(u, self.cp.cfg))
+            self.path = CDIR / f"decisions_{day}.json"
+            self.frozen = json.loads(self.path.read_text(encoding="utf-8")) if self.path.exists() else {}
+            self.ok = True
+        except Exception as e:                                  # noqa: BLE001
+            _cp_status({"phase": "error", "day": day, "message": f"copilot unavailable: {e}"})
+
+    def brief(self) -> None:
+        if not self.ok:
+            return
+        try:
+            from .copilot import load_json
+            from .copilot.brief import morning_brief
+            if not load_json(f"briefs/{self.day}.json"):
+                morning_brief(self.day, sorted(self.tickers), self.cp.cfg)
+        except Exception as e:                                  # noqa: BLE001
+            _cp_status({"phase": "error", "day": self.day, "message": f"morning brief failed: {e}"})
+
+    def step(self, bars, ctx, nifty) -> None:
+        if not self.ok:
+            return
+        try:
+            from .copilot.brief import opening_update
+            b = {t: x for t, x in bars.items() if t in self.tickers}
+            if nifty is not None and len(nifty) >= 3:
+                opening_update(self.day, b, ctx)
+            cards, trades, log, acct = self.cp.run(b, ctx, nifty, self.frozen, self.day)
+            self.path.write_text(json.dumps(self.frozen), encoding="utf-8")
+            top = self.cp.top_cards(cards)
+            _cp_status({"phase": "trading", "day": self.day, "at": now_ist().isoformat(timespec="seconds"),
+                        "pool": self.cp.state["pool"], "cards": cards.drop(columns=["key"], errors="ignore").to_dict("records") if len(cards) else [],
+                        "top": top.drop(columns=["key"], errors="ignore").to_dict("records") if len(top) else [],
+                        "positions": acct.open_positions, "trades": [t.to_dict() for t in trades], "log": log[-200:],
+                        "day_pnl": round(sum(t.net for t in trades) + sum(p["unrealized"] for p in acct.open_positions), 2),
+                        "rules": {k: v for k, v in self.cp.rules.items() if k != "log"},
+                        "message": f"{len(cards)} setups so far, {len(trades)} closed, {len(acct.open_positions)} open."})
+        except Exception as e:                                  # noqa: BLE001
+            _cp_status({"phase": "error", "day": self.day, "message": f"copilot error: {e}"})
+
+    def settle(self, bars, ctx, nifty) -> None:
+        if not self.ok:
+            return
+        try:
+            b = {t: x for t, x in bars.items() if t in self.tickers}
+            rec = self.cp.settle(self.day, b, ctx, nifty, self.frozen)
+            self.path.write_text(json.dumps(self.frozen), encoding="utf-8")
+            _cp_status({"phase": "closed", "day": self.day, "at": now_ist().isoformat(timespec="seconds"),
+                        "pool": self.cp.state["pool"], "result": {k: v for k, v in rec.items() if k != "review"},
+                        "review": rec["review"], "message": f"Day reviewed: net ₹{rec['net']:+,.0f}; "
+                                                           f"{rec['changes']} rule change(s)."})
+        except Exception as e:                                  # noqa: BLE001
+            _cp_status({"phase": "error", "day": self.day, "message": f"copilot settle error: {e}"})
+
+
 def run_live(stop_flag=None, sleep=time.sleep) -> dict:
     """Run one trading day. ``stop_flag()`` -> True stops early (the app's Stop button)."""
     cfg = config()
@@ -114,6 +182,8 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
     u = load_universe(max_age_days=1)        # rebuilt each morning: yesterday's high/low/close, ADR, NR7, volumes
     ctx = context_from_universe(u)
     tickers = u.index.tolist()
+    cp = _CopilotDay(u, day)
+    cp.brief()
     decisions: dict = {}
     dec_path = DIR / f"decisions_{day}.json"
     v2, v2_frozen, v2_path = None, {}, DIR / "v2" / f"decisions_{day}.json"
@@ -185,6 +255,7 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
                             "model": v2.meta, "policy": v2.policy})
             except Exception as e:                               # noqa: BLE001
                 _v2_status({"phase": "error", "day": day, "message": f"v2 error: {e}"})
+        cp.step(bars, ctx, nifty)
         sleep(5)
     # after 15:20: settle and learn on the full day
     bars = finished(today_bars(tickers), now_ist())
@@ -211,6 +282,7 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
                         "pool": v2.state["pool"], "message": f"v2 settled: net ₹{rec['net']:+,.0f}; {note}"})
         except Exception as e:                                   # noqa: BLE001
             _v2_status({"phase": "error", "day": day, "message": f"v2 settle error: {e}"})
+    cp.settle(bars, ctx, nifty)
     _write_status({"phase": "closed", "day": day, "at": now_ist().isoformat(timespec="seconds"), "result": res.to_dict(),
                    "trades": [t.to_dict() for t in trades], "log": log[-200:], "pool": agent.state["pool"],
                    "message": f"Day settled: net ₹{res.net:+,.0f} after ₹{res.costs:,.0f} costs; learned "
