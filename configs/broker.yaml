@@ -1,0 +1,4 @@
+# Which broker the app talks to (src/niveshrl/brokers.py).
+#   paper     - the built-in paper account (default; the only working option)
+#   zerodha | upstox | fyers | angelone - extension slots only: they show a status and refuse every order.
+provider: paper
