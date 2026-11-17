@@ -245,6 +245,10 @@ class Copilot:
         from .forward_log import verify
         chain = verify()
         rec["forward_log"] = {k: chain[k] for k in ("ok", "entries", "head")}
+        try:                                               # the registered hypotheses, judged on live days only
+            rec["hypotheses"] = forward_hypotheses(self.cfg)
+        except Exception:                                  # a review must never fail on a side report
+            rec["hypotheses"] = []
         review = day_review(day, rec, cards, trades, changes, nifty, self.state, refit)
         save_json(f"reviews/{day}.json", review)
         return rec | {"review": review}

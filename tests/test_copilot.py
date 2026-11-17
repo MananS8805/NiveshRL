@@ -233,3 +233,17 @@ def test_engine_run_freezes_decisions(tmp_path, monkeypatch, close_at_end):
     assert frozen == before                                   # a decision never changes after it is made
     if close_at_end:
         assert not acct.open_positions
+
+
+def test_review_reports_forward_hypothesis_without_trading_it():
+    from niveshrl.intraday.copilot.brief import day_review
+    rec = {"net": -100.0, "costs": 10.0, "pool_end": 99_900.0, "cards": 0,
+           "hypotheses": [{"name": "rules only, hold to close", "why": "x",
+                           "days": [{"day": "2026-11-17", "trades": 2, "net": 50.0},
+                                    {"day": "2026-11-18", "trades": 3, "net": -20.0}]}]}
+    state = {"days": [{"day": "2026-11-17", "trades": 2, "net": -1059.0}, {"day": "2026-11-18", "trades": 1, "net": -100.0}]}
+    r = day_review("2026-11-18", rec, pd.DataFrame(), [], [], None, state)
+    line = [x for x in r["learnings"] if x.startswith("Hypothesis")]
+    assert len(line) == 1 and "today 3 trade(s), ₹-20" in line[0] and "5 trades over 2 days, ₹+30" in line[0]
+    assert "₹-1,159" in line[0]
+    assert day_review("2026-11-18", rec | {"hypotheses": []}, pd.DataFrame(), [], [], None, state)["learnings"]

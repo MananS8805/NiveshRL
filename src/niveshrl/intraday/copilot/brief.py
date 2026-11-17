@@ -202,6 +202,16 @@ def day_review(day: str, rec: dict, cards: pd.DataFrame, trades, changes: list[d
     fwd = pd.DataFrame(days)
     if len(fwd):
         learnings.append(f"Forward record: {int(fwd['trades'].sum())} trades over {len(fwd)} days, net ₹{fwd['net'].sum():+,.0f}.")
+    for h in rec.get("hypotheses") or []:
+        hd = pd.DataFrame(h.get("days") or [])
+        if not len(hd):
+            continue
+        today = hd[hd["day"] == day]
+        t_txt = (f"today {int(today['trades'].iloc[0])} trade(s), ₹{today['net'].iloc[0]:+,.0f}; " if len(today) else "")
+        live = f" vs the live policy's ₹{fwd['net'].sum():+,.0f}" if len(fwd) else ""
+        learnings.append(f"Hypothesis \"{h['name']}\" (not traded, tracked forward): {t_txt}{int(hd['trades'].sum())} trades "
+                         f"over {len(hd)} days, ₹{hd['net'].sum():+,.0f}{live}. It needs 50+ trades before it can replace "
+                         "the live policy.")
     review = {"day": day, "summary": summary, "strengths": strengths or ["Nothing stood out as working today."],
               "weaknesses": weaknesses or ["No clear weakness today."], "learnings": learnings,
               "changes": changes, "record": rec}
