@@ -1,0 +1,5 @@
+# Copy to configs/dhan.local.yaml (git-ignored) and fill in yourself. NiveshRL uses Dhan for market DATA only
+# (no orders, ever). Token: web.dhan.co -> My Profile -> DhanHQ Trading APIs -> generate access token (valid 24 hours).
+# Market data also needs Dhan's Data API plan; without it NiveshRL keeps using Yahoo.
+client_id: ""
+access_token: ""

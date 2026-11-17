@@ -43,3 +43,7 @@ data/*.tmp
 data/tradebook.json
 data/nse/
 data/models/
+
+# Dhan market-data credentials (never commit)
+configs/dhan.local.yaml
+data/dhan/

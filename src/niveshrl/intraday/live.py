@@ -45,7 +45,45 @@ def _v2_status(obj: dict) -> None:
     tmp.replace(p)
 
 
+_DHAN: dict = {}
+
+
+def _dhan():
+    """The Dhan data client when configured and its Data API plan is active (checked once a day), else None."""
+    day = now_ist().date()
+    if _DHAN.get("day") != day:
+        _DHAN.clear()
+        _DHAN["day"] = day
+        try:
+            from ..dhan import Dhan
+            d = Dhan.available()
+            st = d.status() if d else {"ok": False, "why": "not configured"}
+            _DHAN["client"] = d if st["ok"] else None
+            _DHAN["why"] = st.get("why", "")
+        except Exception as e:                                   # noqa: BLE001
+            _DHAN["client"], _DHAN["why"] = None, str(e)[:160]
+    return _DHAN.get("client")
+
+
+def data_source() -> str:
+    return "Dhan" if _DHAN.get("client") else f"Yahoo ({_DHAN.get('why') or 'Dhan not configured'})"
+
+
 def today_bars(tickers: list[str], batch: int = 100) -> dict[str, pd.DataFrame]:
+    """Today's 5-minute bars: from Dhan (exchange data) when configured, else Yahoo; NIFTY always from Yahoo, and any
+    stock Dhan does not return falls back to Yahoo."""
+    d = _dhan()
+    if d is not None:
+        try:
+            out = d.today_bars([t for t in tickers if t != "^NSEI"])
+        except Exception:                                        # noqa: BLE001
+            out = {}
+        rest = [t for t in tickers if t not in out]
+        return out | _yahoo_bars(rest, batch)
+    return _yahoo_bars(tickers, batch)
+
+
+def _yahoo_bars(tickers: list[str], batch: int = 100) -> dict[str, pd.DataFrame]:
     import yfinance as yf
     out = {}
     allt = list(tickers) + ["^NSEI"]
@@ -281,7 +319,7 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
                        "bars": len(clock) if clock is not None else 0, "followed": len({s.ticker for s in sigs}),
                        "pool": agent.state["pool"], "day_pnl": round(day_net, 2), "signals": len(sigs),
                        "positions": acct.open_positions, "trades": [t.to_dict() for t in trades],
-                       "log": log[-200:], "leverage": cfg["leverage"],
+                       "log": log[-200:], "leverage": cfg["leverage"], "source": data_source(),
                        "message": f"Following {len({s.ticker for s in sigs})} in-play stocks; "
                                   f"{len(acct.open_positions)} open, {len(trades)} closed today."})
         if v2 is not None:

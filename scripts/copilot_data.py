@@ -20,6 +20,7 @@ from niveshrl.intraday.copilot import CDIR  # noqa: E402
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--top", type=int, default=200)
+    ap.add_argument("--out", default="hist5m.parquet", help="file name in data/intraday/copilot/")
     a = ap.parse_args()
     u = pd.read_csv(DIR / "universe.csv")
     u = u[u["close"] >= 100].sort_values("turnover_cr", ascending=False)
@@ -41,10 +42,10 @@ def main() -> None:
     allb = pd.concat(parts, ignore_index=True)
     allb["ts"] = pd.to_datetime(allb["ts"])
     allb = allb.drop_duplicates(["ticker", "ts"], keep="last").sort_values(["ticker", "ts"])
-    allb.to_parquet(CDIR / "hist5m.parquet")
+    allb.to_parquet(CDIR / a.out)
     (CDIR / "_fresh.parquet").unlink(missing_ok=True)
     days = allb["ts"].dt.normalize().nunique()
-    print(f"hist5m: {len(allb):,} bars, {allb['ticker'].nunique()} tickers, {days} days "
+    print(f"{a.out}: {len(allb):,} bars, {allb['ticker'].nunique()} tickers, {days} days "
           f"({allb['ts'].min().date()} to {allb['ts'].max().date()})")
 
 
