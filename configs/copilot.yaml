@@ -9,6 +9,8 @@ guardrails:                   # fixed: the tuner can never change these
   risk_per_trade: 0.01        # pool share lost if a stop is hit
   max_trades_per_day: 3
   max_open_positions: 3
+  mis_leverage: 5.0           # intraday margin: exposure up to 5x the pool (NSE minimum margin 20%) ...
+  split_exposure: true        # ... split evenly: one trade's value <= pool x 5 / 3 (tight stops get smaller positions)
   daily_loss_stop: 0.02       # no new trades once the day is down 2% of the pool
   no_new_after: "14:30"
   square_off: "15:15"

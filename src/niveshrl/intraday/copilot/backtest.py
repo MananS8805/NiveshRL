@@ -68,6 +68,17 @@ def build_cards(warmup: int = 6, progress=None) -> pd.DataFrame:
     return cards
 
 
+def size_weight(cards: pd.DataFrame, cfg: dict) -> pd.Series:
+    """Share of the full 1%-risk size a trade can take under the live exposure rules: its value may not exceed
+    pool x leverage / max_open_positions (with split_exposure), so tight stops get proportionally smaller positions."""
+    g = cfg["guardrails"]
+    if not g.get("split_exposure"):
+        return pd.Series(1.0, index=cards.index)
+    cap = float(cfg.get("leverage", 1.0)) / g["max_open_positions"]           # max trade value, in pools
+    full = g["risk_per_trade"] / cards["stop_pct"].clip(lower=1e-6)            # value of a full-risk trade, in pools
+    return (cap / full).clip(upper=1.0)
+
+
 def walk_forward_p(cards: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     days = sorted(cards["day"].unique())
     cards = cards.copy()
@@ -120,6 +131,7 @@ def simulate(cards: pd.DataFrame, cfg: dict, warm_days: int):
     its final rules."""
     g = cfg["guardrails"]
     unit = cfg["pool"] * g["risk_per_trade"]
+    cards = cards.assign(size=size_weight(cards, cfg))
     days = sorted(cards["day"].unique())
     ev_days = days[warm_days:]
     V = variants()
@@ -141,8 +153,9 @@ def simulate(cards: pd.DataFrame, cfg: dict, warm_days: int):
             rcol = f"r_{v['exit']}_1x"
             idx = choose_day(cd, rl, g, rcol=rcol)
             if d in net1.index:
-                net1.at[d, name] = float(cd.loc[idx, rcol].fillna(0).sum() * unit)
-                net2.at[d, name] = float(cd.loc[idx, f"r_{v['exit']}_2x"].fillna(0).sum() * unit)
+                w = cd.loc[idx, "size"] if "size" in cd else 1.0
+                net1.at[d, name] = float((cd.loc[idx, rcol].fillna(0) * w).sum() * unit)
+                net2.at[d, name] = float((cd.loc[idx, f"r_{v['exit']}_2x"].fillna(0) * w).sum() * unit)
                 trades.at[d, name] = len(idx)
                 if name == LIVE:
                     taken_rows.append(cd.loc[idx].assign(rcol=rcol))

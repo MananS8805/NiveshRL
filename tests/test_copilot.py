@@ -128,6 +128,25 @@ def _model_cards(signal: float, n_days=40, per_day=25, seed=0):
     return pd.DataFrame(rows)
 
 
+def test_exposure_split_allows_three_positions_and_matches_backtest():
+    from niveshrl.intraday import sim
+    from niveshrl.intraday.copilot.backtest import size_weight
+    cfg = config()
+    g = cfg["guardrails"]
+    assert cfg["leverage"] == g["mis_leverage"] and g["split_exposure"]
+    idx = pd.date_range("2026-11-02 09:15", periods=20, freq="5min")
+    flat = lambda px: pd.DataFrame({"open": px, "high": px * 1.0005, "low": px * 0.9995, "close": px, "volume": 1e7}, index=idx)
+    bars = {t: flat(1000.0) for t in ("A.NS", "B.NS", "C.NS")}
+    sigs = [sim.Signal(t, idx[4], 3, "rs_breakout", "long", 1000.0, 990.0) for t in bars]   # 1% stops: ~₹1L each at full risk
+    acct = sim.Account(cfg, 100_000.0)
+    acct.run_day(sigs, bars, lambda s: ("TAKE", 0.5, ""), close_at_end=False)
+    assert len(acct.open_positions) == 3                                 # cash-only sizing allowed just one
+    cap = 100_000 * cfg["leverage"] / g["max_open_positions"]
+    assert all(p["qty"] * p["entry"] <= cap + 1000 for p in acct.open_positions)
+    w = size_weight(pd.DataFrame({"stop_pct": [0.003, 0.01, 0.02]}), cfg)
+    assert w.iloc[0] == pytest.approx(cap / 100_000 * 0.003 / 0.01) and w.iloc[1] == 1.0 and w.iloc[2] == 1.0
+
+
 def test_model_without_skill_is_gated():
     from niveshrl.intraday.copilot.model import CardModel
     noise = CardModel.fit(_model_cards(0.0))

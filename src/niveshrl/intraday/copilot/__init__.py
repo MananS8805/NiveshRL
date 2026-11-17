@@ -22,7 +22,9 @@ def config() -> dict:
     cp = load_yaml("configs/copilot.yaml")
     cfg = {**base, **{k: v for k, v in cp.items() if k != "guardrails"}}
     cfg["guardrails"] = {**base["guardrails"], **cp["guardrails"]}
-    cfg["leverage"] = 1.0                                    # copilot sizes on cash only
+    # intraday (MIS) margin: NSE's minimum 20% margin allows 5x exposure; split across the open-position slots so a
+    # 1%-risk trade with a ~1% stop does not use the whole pool by itself (it did on cash-only sizing: 1 position max)
+    cfg["leverage"] = float(cp["guardrails"].get("mis_leverage", 1.0))
     return cfg
 
 

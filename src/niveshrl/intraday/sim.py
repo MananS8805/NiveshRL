@@ -153,6 +153,8 @@ class Account:
                 qty = int(self.pool0 * g["risk_per_trade"] * size // dist)
                 exposure = sum(p["t"].entry * p["t"].qty for p in open_pos)
                 qty = min(qty, int(max(self.pool0 * self.lev - exposure, 0) // fill))
+                if g.get("split_exposure"):                   # copilot: each trade gets at most its share of exposure
+                    qty = min(qty, int(self.pool0 * self.lev / g["max_open_positions"] // fill))
                 qty = min(qty, int(g["max_volume_share"] * float(b["volume"].iloc[sig.bar])))
                 if qty <= 0:
                     log.append(entry | {"event": "blocked", "detail": "no size left (exposure / volume cap)"})
