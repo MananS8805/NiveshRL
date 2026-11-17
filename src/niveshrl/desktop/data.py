@@ -240,3 +240,15 @@ def plan_entry(feed, ticker: str) -> tuple[float | None, str]:
         return None, ""
     return float(s.iloc[-1]), f"last close {s.index[-1]:%d %b}"
 
+
+
+def swing_record() -> dict | None:
+    """The swing plan's point-in-time record (report/results/swing_meta.csv): R per trade after costs."""
+    from ..config import ROOT
+    f = ROOT / "report" / "results" / "swing_meta.csv"
+    try:
+        s = pd.read_csv(f, index_col=0)
+        a, r = s.loc["all picks"], s.loc["random control"]
+        return {"all": float(a["avg R"]), "n": int(a["trades"]), "t": float(a["t (per signal day)"]), "rand": float(r["avg R"])}
+    except Exception:                                       # noqa: BLE001
+        return None

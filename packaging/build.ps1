@@ -40,6 +40,8 @@ New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\copilot") | 
 foreach ($f in @("cards.parquet", "model.pkl", "rules.json")) {
     if (Test-Path "data\intraday\copilot\$f") { Copy-Item "data\intraday\copilot\$f" (Join-Path $Seed "data\intraday\copilot\$f") }
 }
+New-Item -ItemType Directory -Force (Join-Path $Seed "data\intraday\algo") | Out-Null      # 50-trade book: replay tournament
+if (Test-Path "data\intraday\algo\tournament.parquet") { Copy-Item "data\intraday\algo\tournament.parquet" (Join-Path $Seed "data\intraday\algo\tournament.parquet") }
 foreach ($f in @("state.json", "trades.csv", "bandit.json", "scorer.pkl", "shadow.parquet")) {
     if (Test-Path "data\intraday\replay\$f") { Copy-Item "data\intraday\replay\$f" (Join-Path $Seed "data\intraday\replay\$f") }
 }

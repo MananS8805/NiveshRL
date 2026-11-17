@@ -46,3 +46,14 @@ model:
 
 forward:
   min_trades_verdict: 50      # no money verdict before this many forward trades
+
+algo:                         # the 50-trade paper book (Algo trader); paper only, never a real order
+  enabled: true
+  min_trades: 50              # the book trades the tournament leader among rules averaging >= 50 trades/day
+  top_liquid: 150             # universe: top 150 by trailing turnover, point-in-time
+  in_play: null               # or N: narrow to the N widest 20-day average ranges
+  leverage: 5.0               # MIS margin
+  max_open: 12                # concurrent positions; each trade's notional = pool x leverage / max_open
+  window_days: 20             # trailing days used to pick the leader
+  daily_loss_stop: 0.02       # no new entries after the day loses 2% of the pool (risk limit beats the quota)
+  rule: null                  # pin one rule by name to override the tournament

@@ -162,23 +162,20 @@ def test_frame_table_keeps_given_order_until_header_clicked(qtbot):
 def test_one_screen_at_a_time_and_back(qtbot, window):
     _wait_ready(qtbot, window)
     window.show_panel("MKT")
-    window.show_panel("RANK")
-    assert window.pages.currentWidget() is window.panels["RANK"]
-    assert [p.code for p in window._visible_panels()] == ["RANK"]
+    window.show_panel("COPILOT")
+    assert window.pages.currentWidget() is window.panels["COPILOT"]
+    assert [p.code for p in window._visible_panels()] == ["COPILOT"]
     window.go_back()
     assert window.current == "MKT"
 
 
-def test_rankers_live_ranking_starts_at_rank_one(qtbot, window):
+def test_screens_without_a_measured_edge_are_gone_and_algo_trader_opens_on_the_book(qtbot, window):
     _wait_ready(qtbot, window)
-    window.show_panel("RANK")
-    rk = window.panels["RANK"]
-    if rk.table.empty:
-        pytest.skip("no ranker predictions")
-    assert rk.live.proxy.index(0, 0).data() == "1"
-    rk.search.setText("bank")
-    assert all("bank" in (str(lbl) + rk.table.loc[lbl, "Company"]).lower() for lbl in rk.live.model_.labels)
-    rk.search.setText("")
+    for code in ("RANK", "LAB", "PLAN", "MODELS", "ALGO"):
+        assert code not in window.panels
+    window.show_panel("COPILOT")
+    cp = window.panels["COPILOT"]
+    assert cp.title == "Algo trader" and cp.tabs.tabText(0) == "50-trade book"
 
 
 def test_price_chart_y_axis_fits_visible_window(qtbot):

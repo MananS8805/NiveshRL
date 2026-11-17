@@ -160,6 +160,34 @@ seeing the holdout, so it is tracked as a forward hypothesis on live days, not t
 `Broker` interface. Only the paper account is implemented; Zerodha, Upstox, Fyers and Angel One are named slots that
 report "not connected" and refuse every order.
 
+## Algo trader: the 50-trade book (and what was cut)
+
+The desktop app's **Algo trader** screen runs two paper books in the market-hours process. The copilot (at most 3
+structural setups a day) is described above. The **50-trade book** ([intraday/algo](src/niveshrl/intraday/algo/)) trades
+one rule a day from a tournament of 93 simple high-turnover rules on the 150 most liquid NSE stocks: cross-sectional
+momentum and reversal, VWAP-stretch fades and high-volume breakouts on 5-minute bars. The rule it trades is the best net
+₹/day over the previous 20 days among rules that average 50+ trades a day and that its 12 position slots can carry.
+Signals fill at the next bar's open, each trade is worth pool × 5 ÷ 12 (MIS), every trade pays real MIS charges plus
+0.03% slippage a side, and no new entry is taken after the day loses 2% of the pool (the risk limit beats the quota).
+After the close every rule is scored on the day in shadow, so tomorrow's choice uses today too.
+
+**Measured, not hoped:** [algo_benchmark.md](report/results/algo_benchmark.md) (`python scripts/algo_benchmark.py`). A
+round trip costs about 16.6 bps at ₹41,667 a trade. The best rules move 5-12 bps gross per trade, and **none of the 93
+earns its costs** over the 87 stored days. The live policy made 54 trades a day and lost ₹3,406 a day (90% bootstrap
+−₹4,051 to −₹2,794): **NOT READY** (2/7 checks). Gross edge rises with holding time while the cost per trade is fixed,
+so the measurements point the other way from a trade quota: fewer, longer trades (the swing plan, the copilot's
+"hold to close" hypothesis). The book runs anyway, on paper, to measure that forward and to test new rules on the same
+cost-honest harness before anyone trusts them. Restricting the copilot to in-play stocks (widest 20-day ranges) was also
+tested: better on the holdout half, worse on the design half, so it was not adopted.
+
+**Removed from the app on 17 Nov 2026** because they had no measured trading edge (code, scripts and results stay in
+the repo, so the research remains reproducible): the Rankers and Backtest lab screens (monthly DL rankers do not beat
+plain momentum on point-in-time members: long-short spread t 1.6), RL & plan (the PPO allocator's Sharpe 0.64 is level
+with equal weight's 0.63 and below minimum variance's 0.85), Models, the v1 Intraday agent screen (replay −₹261/day), the stacked
+next-day "Pattern changes" tab (about 52% accuracy, but negative after costs as a daily trade) and the live v2 deep-
+learning engine (`engine: v1` in configs/intraday.yaml). Today now opens on the **swing plan**, the one edge that holds
+up: +0.16R per trade after costs over 3,451 point-in-time trades 2017-2026 (t 4.1) vs +0.08R for random picks.
+
 ## Desktop app (Windows)
 
 ```bash

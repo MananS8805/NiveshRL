@@ -1,4 +1,5 @@
-"""COPILOT: the intraday copilot's day in one screen. Morning brief and watchlist, the best setups right now (always
+"""COPILOT (shown as "Algo trader"): two paper books in one screen. The 50-trade book trades the tournament leader
+among high-turnover rules (``intraday.algo``); the copilot takes at most 3 structural setups a day. The copilot's day: Morning brief and watchlist, the best setups right now (always
 three, labelled when below the bar), the paper account, the end-of-day review (strengths, weaknesses, learnings) and the
 money scorecard (backtest benchmark + forward record under the same tests). It runs inside the intraday agent's
 market-hours process, so the agent's Start button / 09:05 auto-start runs it too. Paper only."""
@@ -21,6 +22,7 @@ from . import Panel, vbox
 
 IST = timezone(timedelta(hours=5, minutes=30))
 BENCH = ROOT / "report" / "results" / "copilot_benchmark.json"
+ALGO_BENCH = ROOT / "report" / "results" / "algo_benchmark.json"
 MONEY = {"ref": "₹{:,.2f}", "stop": "₹{:,.2f}", "entry": "₹{:,.2f}", "target": "₹{:,.2f}", "exit": "₹{:,.2f}",
          "last": "₹{:,.2f}", "net": "₹{:+,.0f}", "gross": "₹{:+,.0f}", "costs": "₹{:,.0f}", "unrealized": "₹{:+,.0f}",
          "r": "{:+.2f}", "P(win)": "{:.0%}", "cost R": "{:.2f}", "stop %": "{:.2%}", "close": "₹{:,.2f}",
@@ -43,7 +45,7 @@ def _ul(items) -> str:
 
 
 class CopilotPanel(Panel):
-    title = "Intraday copilot"
+    title = "Algo trader"
     code = "COPILOT"
 
     def __init__(self, ctx, parent=None):
@@ -51,10 +53,11 @@ class CopilotPanel(Panel):
         self.runner = ctx.agent
         self.settings = QSettings("NiveshRL", "NiveshRL")
         lay = vbox(self)
-        lay.addWidget(muted("Scans the 150 most liquid NSE stocks for four structural setups, scores each with a calibrated "
-                            "P(win after costs), takes at most 3 paper trades a day, then reviews its day and tunes its own "
-                            "rules from the evidence. Paper only: no order is ever placed. It is not proven to make money: "
-                            "see the Scorecard tab before trusting any card."))
+        lay.addWidget(muted("Two paper books on the 150 most liquid NSE stocks. The 50-trade book runs the best high-turnover "
+                            "rule from a daily tournament of 93 rules scored after real costs. The copilot takes at most 3 "
+                            "structural setups a day and tunes its rules from the evidence. Both review their day after the "
+                            "close. Paper only: no order is ever placed. Neither is proven to make money: check each "
+                            "scorecard before trusting it."))
         bar = QHBoxLayout()
         self.go = QPushButton("▶ Start for today")
         self.go.setObjectName("primary")
@@ -89,7 +92,22 @@ class CopilotPanel(Panel):
         tl.addWidget(h2("Watchlist and opening levels", "copilot_brief"))
         self.watch = FrameTable(fmt=MONEY, signed={"change", "gap"})
         tl.addWidget(self.watch, 1)
-        self.tabs.addTab(tw, "Today")
+        self.tabs.addTab(tw, "Copilot today")
+        # 50-trade book
+        bw = QWidget()
+        bl = QVBoxLayout(bw)
+        self.book_head = QTextBrowser()
+        self.book_head.setMaximumHeight(190)
+        bl.addWidget(self.book_head)
+        bl.addWidget(h2("Book trades today (open and closed)", "algo_book"))
+        self.book_trades = FrameTable(fmt=MONEY, signed={"net", "gross", "unrealized"})
+        bl.addWidget(self.book_trades, 1)
+        bl.addWidget(h2("Rule tournament: last 20 days, after costs (best first)", "algo_book"))
+        self.book_tour = FrameTable(fmt={"net ₹/day": "₹{:+,.0f}", "gross bps": "{:+.1f}", "net bps": "{:+.1f}",
+                                         "trades/day": "{:.0f}"}, signed={"net ₹/day", "gross bps", "net bps"})
+        bl.addWidget(self.book_tour, 1)
+        self.tabs.insertTab(0, bw, "50-trade book")
+        self.tabs.setCurrentIndex(0)
         # All cards
         cw = QWidget()
         cl = QVBoxLayout(cw)
@@ -154,7 +172,7 @@ class CopilotPanel(Panel):
                 self.settings.setValue(key, d)
                 obj = load_json(str(path.relative_to(CDIR)).replace("\\", "/")) or {}
                 msg = " ".join((obj.get("lines") or obj.get("summary") or [])[:2])
-                self.ctx.alert.emit(title, msg[:240] or "Open NiveshRL → Intraday copilot.")
+                self.ctx.alert.emit(title, msg[:240] or "Open NiveshRL → Algo trader.")
         if self.isVisible():
             self.refresh()
 
@@ -182,11 +200,68 @@ class CopilotPanel(Panel):
         ])
         if live.get("message"):
             self.status.setText(f"{live.get('phase', '')}: {live.get('message')} ({str(live.get('at', ''))[11:16]})")
+        self._book(d)
         self._brief(d)
         self._today_tables(live, d)
         self._reviews()
         self._scorecard(bench, days)
         self._rules()
+
+    def _book(self, d: str) -> None:
+        from ...intraday.algo.book import TOURN, load_json as book_json
+        lv = book_json("live.json", {}) or {}
+        st = book_json("state.json", {}) or {}
+        days = pd.DataFrame(st.get("days", []))
+        bench = json.loads(ALGO_BENCH.read_text(encoding="utf-8")) if ALGO_BENCH.exists() else {}
+        g, red, amb = theme.GREEN, theme.RED, theme.AMBER
+        parts = []
+        if lv.get("day") == d:
+            res = lv.get("result") or {}
+            pnl = lv.get("day_pnl", res.get("net", 0)) or 0
+            rule = lv.get("rule") or res.get("rule", "")
+            why = f" ({html.escape(lv['why'])})" if lv.get("why") else ""
+            parts.append(f"<h3>Today: <span style='color:{g if pnl >= 0 else red}'>₹{pnl:+,.0f}</span> · "
+                         f"{html.escape(lv.get('phase', ''))}</h3><p>Rule: <b>{html.escape(str(rule))}</b>{why}. "
+                         f"{html.escape(lv.get('message', ''))}</p>")
+            rv = lv.get("review")
+            if rv:
+                parts.append("<h4>Day review</h4>" + _ul(rv.get("summary", []) + rv.get("learnings", [])))
+        else:
+            parts.append(f"<p style='color:{theme.MUTED}'>Not running today yet: it starts with the copilot at 09:05 "
+                         "(auto) or when you press Start.</p>")
+        if bench:
+            v = bench.get("verdict", {})
+            b = bench.get("boot", {})
+            parts.append(f"<p style='color:{red if v.get('label') == 'NOT READY' else amb}'><b>Backtest verdict: "
+                         f"{html.escape(v.get('label', '?'))}</b> ({v.get('passed')}/{v.get('total')} checks) · "
+                         f"{bench.get('trades_per_day', 0):.0f} trades/day · mean day ₹{b.get('mean', 0):+,.0f} "
+                         f"(90% CI ₹{b.get('lo90', 0):+,.0f} to ₹{b.get('hi90', 0):+,.0f}) · each trade costs "
+                         f"{bench.get('cost_bps', 0):.1f} bps. A rule must earn more than that per trade; none of the 93 "
+                         "measured rules does yet. Report: report/results/algo_benchmark.md</p>")
+        if len(days):
+            parts.append(f"<p>Forward paper record: {len(days)} day(s), {int(days['trades'].sum())} trades, "
+                         f"net ₹{days['net'].sum():+,.0f}; pool ₹{st.get('pool', 0):,.0f}.</p>")
+        self.book_head.setHtml("".join(parts))
+        rows = ([dict(p, status="open") for p in lv.get("positions", [])] + [dict(t, status="closed") for t in lv.get("trades", [])]
+                if lv.get("day") == d else [])
+        tr = pd.DataFrame(rows)
+        if len(tr):
+            tr["ticker"] = tr["ticker"].str.replace(".NS", "", regex=False)
+            tr = tr[[c for c in ["status", "ticker", "side", "entry", "exit", "last", "qty", "gross", "costs", "net",
+                                 "unrealized"] if c in tr]]
+        _set(self.book_trades, tr, "algo_book")
+        try:
+            tab = pd.read_parquet(TOURN)
+            tab = tab.sort_values("source", key=lambda x: x.eq("live")).drop_duplicates(["day", "name"], keep="last")
+            last = sorted(tab["day"].unique())[-20:]
+            t = tab[tab["day"].isin(last)].groupby("name").agg(**{"trades/day": ("trades", "mean"),
+                                                                    "gross bps": ("gross_bps", "mean"),
+                                                                    "net bps": ("net_bps", "mean"),
+                                                                    "net ₹/day": ("net", "mean")})
+            t = t.sort_values("net ₹/day", ascending=False).reset_index().rename(columns={"name": "rule"})
+            _set(self.book_tour, t, "algo_book")
+        except Exception:                                   # noqa: BLE001
+            _set(self.book_tour, pd.DataFrame(), "algo_book")
 
     def _skill_text(self) -> str:
         try:

@@ -70,7 +70,7 @@ class TodayPanel(Panel):
         hrow.addWidget(self.n)
         wl_.addLayout(hrow)
         self.warn = QTextBrowser()
-        self.warn.setMaximumHeight(62)
+        self.warn.setMaximumHeight(84)
         wl_.addWidget(self.warn)
         mon = QHBoxLayout()
         self.lists = {}
@@ -85,7 +85,7 @@ class TodayPanel(Panel):
         wl_.addLayout(mon, 1)
         wl_.addWidget(muted("Click a stock to open its chart, news and technicals. Stop / T1 / Qty are trade plans sized "
                             "for your capital and risk in My desk (weakness list: the level where holders should exit)."))
-        self.tabs.addTab(watch, "Watch tomorrow")
+        self.tabs.addTab(watch, "Swing plan: watch tomorrow")
 
         # --- tab: who will move tomorrow (range model)
         mw = QWidget()
@@ -117,12 +117,12 @@ class TodayPanel(Panel):
         hl.addLayout(hab, 1)
         hl.addWidget(muted("Day of week: mean NIFTY return and share of up days (hit). Use as context, not as a signal."))
         self.tabs.addTab(habw, "Market habits")
-        from .stacked_tab import StackedTab
-        self.stacked = StackedTab(lambda t: self.stock_selected.emit(t))
-        self.tabs.addTab(self.stacked, "Pattern changes")
+        # the "Pattern changes" tab (stacked next-day direction model) was removed: right more often than not, but
+        # negative after costs as a daily trade (report/results/nextday_summary_pit.csv)
+        self.tabs.tabBar().moveTab(1, 0)          # the swing list with plans (the measured edge) opens first
+        self.tabs.setCurrentIndex(0)
 
     def refresh(self) -> None:
-        self.stacked.refresh()
         b, mon, hab = data.dload("briefing"), data.dload("monitor"), data.dload("habits")
         if b is None:
             self.story.setHtml("<p>No daily data yet. Press <b>F5</b> (or the tray menu → Refresh) to run the daily "
@@ -165,12 +165,15 @@ class TodayPanel(Panel):
         # monitor lists
         ytd = data.dload("nextday_ytd") or {}
         e = ytd.get("ensemble") or ytd.get("lgbm") or {}
+        sw = data.swing_record()
+        rec = (f"Traded as swing plans (stop under the 10-day low, T1 at 1.5R, trail), these picks made "
+               f"<b>{sw['all']:+.2f}R per trade after costs</b> over {sw['n']:,} point-in-time trades 2017-2026 "
+               f"(t {sw['t']:.1f}) vs {sw['rand']:+.2f}R for random picks. " if sw else "")
         self.warn.setHtml(
-            f"<span style='color:{theme.AMBER}'>For <b>watching</b>, not blind buying.</span> The next-day model's "
-            f"out-of-sample record this year: AUC {e.get('AUC', float('nan')):.3f}, top-10 hit rate "
-            f"{e.get('Top10 hit rate', float('nan')):.0%}, accuracy {e.get('Accuracy', float('nan')):.1%} "
-            "(51-54% is a good result for next-day direction). Daily turnover at Indian costs (~0.25% round trip) "
-            "usually eats the edge.")
+            f"<span style='color:{theme.GREEN}'>The project's one measured edge.</span> {rec}"
+            f"As a one-day trade the same list does not pay its costs, so hold to the plan, not to tomorrow's close. "
+            f"Next-day model this year: AUC {e.get('AUC', float('nan')):.3f}, top-10 hit rate "
+            f"{e.get('Top10 hit rate', float('nan')):.0%}.")
         if mon is not None:
             from .desk import current_risk_state, desk_settings
             from ...research.plans import plans_for

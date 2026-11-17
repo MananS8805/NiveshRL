@@ -1,0 +1,462 @@
+{
+ "trades": 3857,
+ "net": -241842.75262711875,
+ "holdout_net": -144630.3027562618,
+ "boot": {
+  "n": 71,
+  "mean": -3406.2359524946305,
+  "lo90": -4051.370094571703,
+  "hi90": -2794.403653389407,
+  "p_pos": 0.0
+ },
+ "dsr": 4.0202695132733727e-75,
+ "pbo": 0.0,
+ "random_p": 0.3333333333333333,
+ "net_2x": -338267.7526271188,
+ "days": 71,
+ "trades_per_day": 54.32394366197183,
+ "notional": 41666.666666666664,
+ "cost_bps": 16.60452,
+ "verdict": {
+  "checks": {
+   "enough_trades": true,
+   "holdout_positive": false,
+   "bootstrap_lo_positive": false,
+   "deflated_sharpe": false,
+   "low_overfitting": true,
+   "beats_matched_random": false,
+   "survives_2x_costs": false
+  },
+  "passed": 2,
+  "total": 7,
+  "label": "NOT READY"
+ },
+ "rules": [
+  {
+   "day": "2026-08-04",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -3050.325952730788
+  },
+  {
+   "day": "2026-08-05",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 52,
+   "net": -2019.5725696923457
+  },
+  {
+   "day": "2026-08-06",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 56,
+   "net": -4488.409531086356
+  },
+  {
+   "day": "2026-08-07",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 55,
+   "net": -3175.7541472986645
+  },
+  {
+   "day": "2026-08-10",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 53,
+   "net": -2323.6969602749477
+  },
+  {
+   "day": "2026-08-11",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -2852.1687401667255
+  },
+  {
+   "day": "2026-08-12",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 55,
+   "net": -7895.942659226734
+  },
+  {
+   "day": "2026-08-13",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 68,
+   "net": -2452.845212949579
+  },
+  {
+   "day": "2026-08-14",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 61,
+   "net": 435.1676653980859
+  },
+  {
+   "day": "2026-08-17",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 62,
+   "net": 2148.8480410969596
+  },
+  {
+   "day": "2026-08-18",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 56,
+   "net": -4412.044362066467
+  },
+  {
+   "day": "2026-08-19",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 61,
+   "net": -4379.172925806347
+  },
+  {
+   "day": "2026-08-20",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 59,
+   "net": -6386.9749865463355
+  },
+  {
+   "day": "2026-08-21",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 60,
+   "net": -4950.9489938355255
+  },
+  {
+   "day": "2026-08-24",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 55,
+   "net": -1860.8699323370122
+  },
+  {
+   "day": "2026-08-25",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 63,
+   "net": -3294.45358091944
+  },
+  {
+   "day": "2026-08-26",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 55,
+   "net": -2957.1251878134703
+  },
+  {
+   "day": "2026-08-27",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 65,
+   "net": -1058.1575291808294
+  },
+  {
+   "day": "2026-08-28",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 55,
+   "net": -2126.7852477002384
+  },
+  {
+   "day": "2026-08-31",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 63,
+   "net": -8373.73086388612
+  },
+  {
+   "day": "2026-09-01",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 55,
+   "net": -2541.429275526537
+  },
+  {
+   "day": "2026-09-02",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -1057.517491685352
+  },
+  {
+   "day": "2026-09-03",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 60,
+   "net": -5186.222376531636
+  },
+  {
+   "day": "2026-09-04",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 62,
+   "net": -4777.182322117447
+  },
+  {
+   "day": "2026-09-07",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 56,
+   "net": -3209.5988883381174
+  },
+  {
+   "day": "2026-09-08",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 54,
+   "net": -617.6601540240234
+  },
+  {
+   "day": "2026-09-09",
+   "rule": "xs_mom look=3 every=3 k=2 hold=12",
+   "trades": 53,
+   "net": -1767.2978614364188
+  },
+  {
+   "day": "2026-09-10",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 49,
+   "net": -192.70794990795972
+  },
+  {
+   "day": "2026-09-11",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 46,
+   "net": 2857.2132391853365
+  },
+  {
+   "day": "2026-09-15",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 52,
+   "net": -5884.375651140319
+  },
+  {
+   "day": "2026-09-16",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 46,
+   "net": 2922.1272189118904
+  },
+  {
+   "day": "2026-09-17",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 54,
+   "net": -2019.9862174106477
+  },
+  {
+   "day": "2026-09-18",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 50,
+   "net": -6052.891468629318
+  },
+  {
+   "day": "2026-09-21",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 47,
+   "net": -1739.1010312872756
+  },
+  {
+   "day": "2026-09-22",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -2470.855963896275
+  },
+  {
+   "day": "2026-09-23",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 52,
+   "net": -1000.5367747272319
+  },
+  {
+   "day": "2026-09-24",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 55,
+   "net": -4058.58217563847
+  },
+  {
+   "day": "2026-09-25",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 53,
+   "net": -5834.737458039538
+  },
+  {
+   "day": "2026-09-28",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 48,
+   "net": -4333.537063165634
+  },
+  {
+   "day": "2026-09-29",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 56,
+   "net": -1671.893995540998
+  },
+  {
+   "day": "2026-09-30",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 54,
+   "net": -4055.604280350494
+  },
+  {
+   "day": "2026-10-01",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 53,
+   "net": -1242.4226744919697
+  },
+  {
+   "day": "2026-10-05",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 54,
+   "net": -4047.4324992854463
+  },
+  {
+   "day": "2026-10-06",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -2573.5426941285386
+  },
+  {
+   "day": "2026-10-07",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -1081.1168070464257
+  },
+  {
+   "day": "2026-10-08",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 56,
+   "net": -4445.833663724778
+  },
+  {
+   "day": "2026-10-09",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -5558.392695447865
+  },
+  {
+   "day": "2026-10-12",
+   "rule": "xs_mom look=6 every=6 k=3 hold=6",
+   "trades": 51,
+   "net": -7007.689613287633
+  },
+  {
+   "day": "2026-10-13",
+   "rule": "xs_mom look=6 every=3 k=2 hold=6",
+   "trades": 53,
+   "net": -3547.2491660805
+  },
+  {
+   "day": "2026-10-14",
+   "rule": "xs_mom look=6 every=3 k=2 hold=6",
+   "trades": 50,
+   "net": -6188.777198342397
+  },
+  {
+   "day": "2026-10-15",
+   "rule": "vwap_fade z=2.0 hold=12",
+   "trades": 49,
+   "net": -663.4578269231445
+  },
+  {
+   "day": "2026-10-16",
+   "rule": "vwap_fade z=2.0 hold=12",
+   "trades": 44,
+   "net": -4362.945332372675
+  },
+  {
+   "day": "2026-10-19",
+   "rule": "vwap_fade z=2.0 hold=12",
+   "trades": 41,
+   "net": -7735.117487118011
+  },
+  {
+   "day": "2026-10-21",
+   "rule": "vwap_fade z=2.0 hold=12",
+   "trades": 177,
+   "net": -15081.896757880499
+  },
+  {
+   "day": "2026-10-22",
+   "rule": "xs_mom look=3 every=6 k=3 hold=6",
+   "trades": 55,
+   "net": -7446.952830942407
+  },
+  {
+   "day": "2026-10-23",
+   "rule": "xs_mom look=3 every=6 k=3 hold=12",
+   "trades": 47,
+   "net": 365.64002579373386
+  },
+  {
+   "day": "2026-10-26",
+   "rule": "vwap_fade z=2.0 hold=12",
+   "trades": 125,
+   "net": -12300.560965627348
+  },
+  {
+   "day": "2026-10-27",
+   "rule": "vwap_fade z=2.5 hold=3",
+   "trades": 12,
+   "net": 1384.110294587333
+  },
+  {
+   "day": "2026-10-28",
+   "rule": "vwap_fade z=2.5 hold=3",
+   "trades": 36,
+   "net": -2504.755989324119
+  },
+  {
+   "day": "2026-10-29",
+   "rule": "vwap_fade z=2.5 hold=3",
+   "trades": 20,
+   "net": -161.70903077293943
+  },
+  {
+   "day": "2026-10-30",
+   "rule": "vwap_fade z=2.5 hold=3",
+   "trades": 15,
+   "net": -557.2318020309233
+  },
+  {
+   "day": "2026-11-02",
+   "rule": "vwap_fade z=2.5 hold=3",
+   "trades": 27,
+   "net": -2364.160112075645
+  },
+  {
+   "day": "2026-11-03",
+   "rule": "xs_rev look=6 every=6 k=3 hold=6",
+   "trades": 54,
+   "net": -4853.6265602865915
+  },
+  {
+   "day": "2026-11-04",
+   "rule": "xs_rev look=6 every=6 k=3 hold=6",
+   "trades": 55,
+   "net": -6123.800504598863
+  },
+  {
+   "day": "2026-11-05",
+   "rule": "xs_rev look=6 every=6 k=3 hold=6",
+   "trades": 53,
+   "net": -3365.9984723021466
+  },
+  {
+   "day": "2026-11-06",
+   "rule": "xs_rev look=6 every=6 k=3 hold=6",
+   "trades": 50,
+   "net": -1076.0180411815631
+  },
+  {
+   "day": "2026-11-09",
+   "rule": "xs_rev look=6 every=6 k=3 hold=6",
+   "trades": 58,
+   "net": -2220.571104402551
+  },
+  {
+   "day": "2026-11-11",
+   "rule": "xs_rev look=6 every=3 k=2 hold=6",
+   "trades": 57,
+   "net": -2358.9272559244446
+  },
+  {
+   "day": "2026-11-12",
+   "rule": "xs_rev look=6 every=3 k=2 hold=6",
+   "trades": 53,
+   "net": -6792.190031937155
+  },
+  {
+   "day": "2026-11-13",
+   "rule": "xs_rev look=6 every=3 k=2 hold=6",
+   "trades": 51,
+   "net": -7096.0349216733575
+  },
+  {
+   "day": "2026-11-16",
+   "rule": "xs_mom look=3 every=6 k=3 hold=12",
+   "trades": 48,
+   "net": -2666.7492899705903
+  }
+ ]
+}

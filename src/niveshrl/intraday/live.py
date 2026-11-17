@@ -167,6 +167,44 @@ class _CopilotDay:
             _cp_status({"phase": "error", "day": self.day, "message": f"copilot settle error: {e}"})
 
 
+class _AlgoDay:
+    """The 50-trade paper book (Algo trader) in the same loop; its errors are reported and never stop the others."""
+
+    def __init__(self, u, day: str):
+        self.ok, self.day, self.book = False, day, None
+        try:
+            from .copilot import config as cp_config
+            cfg = cp_config()
+            if not (cfg.get("algo") or {}).get("enabled"):
+                return
+            from .algo.book import AlgoBook
+            self.book = AlgoBook(cfg, u, day)
+            self.ok = True
+        except Exception as e:                                  # noqa: BLE001
+            self._err(f"algo book unavailable: {e}")
+
+    def _err(self, msg: str) -> None:
+        try:
+            from .algo.book import _save
+            _save("live.json", {"phase": "error", "day": self.day, "at": now_ist().isoformat(timespec="seconds"), "message": msg})
+        except Exception:                                       # noqa: BLE001
+            pass
+
+    def step(self, bars, ctx) -> None:
+        if self.ok:
+            try:
+                self.book.step(bars, ctx, now_ist().isoformat(timespec="seconds"))
+            except Exception as e:                              # noqa: BLE001
+                self._err(f"algo book error: {e}")
+
+    def settle(self, bars, ctx) -> None:
+        if self.ok:
+            try:
+                self.book.settle(bars, ctx, now_ist().isoformat(timespec="seconds"))
+            except Exception as e:                              # noqa: BLE001
+                self._err(f"algo book settle error: {e}")
+
+
 def run_live(stop_flag=None, sleep=time.sleep) -> dict:
     """Run one trading day. ``stop_flag()`` -> True stops early (the app's Stop button)."""
     cfg = config()
@@ -185,6 +223,7 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
     tickers = u.index.tolist()
     cp = _CopilotDay(u, day)
     cp.brief()
+    algo = _AlgoDay(u, day)
     decisions: dict = {}
     dec_path = DIR / f"decisions_{day}.json"
     v2, v2_frozen, v2_path = None, {}, DIR / "v2" / f"decisions_{day}.json"
@@ -257,6 +296,7 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
             except Exception as e:                               # noqa: BLE001
                 _v2_status({"phase": "error", "day": day, "message": f"v2 error: {e}"})
         cp.step(bars, ctx, nifty)
+        algo.step(bars, ctx)
         sleep(5)
     # after 15:20: settle and learn on the full day
     bars = finished(today_bars(tickers), now_ist())
@@ -284,6 +324,7 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
         except Exception as e:                                   # noqa: BLE001
             _v2_status({"phase": "error", "day": day, "message": f"v2 settle error: {e}"})
     cp.settle(bars, ctx, nifty)
+    algo.settle(bars, ctx)
     _write_status({"phase": "closed", "day": day, "at": now_ist().isoformat(timespec="seconds"), "result": res.to_dict(),
                    "trades": [t.to_dict() for t in trades], "log": log[-200:], "pool": agent.state["pool"],
                    "message": f"Day settled: net ₹{res.net:+,.0f} after ₹{res.costs:,.0f} costs; learned "

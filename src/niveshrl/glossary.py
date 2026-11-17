@@ -1373,7 +1373,7 @@ E("agent_engines", "Intraday engines v1 and v2", "Desk",
            "DL meta-labeler IC", "Area", "Result", "Decision", "Deep-learning engine (v2)",
            "Every improvement tried, measured out of sample", "Intraday agent (minutes to hours)",
            "v2 open positions and today's trades", "v1 vs v2, day by day (₹ net after costs)"])
-E("copilot", "Intraday copilot", "Desk",
+E("copilot", "Algo trader: copilot", "Desk",
   "A lighter intraday assistant: before the open it writes a brief and a watchlist; during the session it scans the 150 "
   "most liquid NSE stocks for four structural setups (15-minute opening-range breakout, VWAP hold, relative-strength "
   "breakout, trend-day pullback), scores each with a calibrated P(win after costs) and takes at most 3 paper trades; "
@@ -1389,6 +1389,22 @@ E("copilot", "Intraday copilot", "Desk",
   related=["copilot_card", "copilot_review", "copilot_scorecard", "copilot_rules"],
   aliases=["Copilot pool", "Copilot today", "Copilot setups today", "Copilot forward trades", "Copilot backtest verdict",
            "Copilot run mode", "Copilot model skill"])
+E("algo_book", "50-trade book (Algo trader)", "Desk",
+  "A high-turnover paper book. Every day it trades one rule from a tournament of 93 simple intraday rules on the 150 "
+  "most liquid NSE stocks (cross-sectional momentum and reversal, VWAP stretch fades, high-volume breakouts), chosen "
+  "as the best net ₹/day over the previous 20 days among rules that make 50+ trades a day and that 12 position slots "
+  "can carry. After the close every rule is scored on the day after costs, so tomorrow's choice uses today too.",
+  how="A signal on a finished 5-minute bar fills at the next bar's open; each trade is worth pool × 5 ÷ 12 (MIS margin); "
+      "it exits after the rule's holding period or at the 15:15 square-off and pays real MIS charges plus 0.03% "
+      "slippage a side. No new entry after the day loses 2% of the pool: the risk limit beats the 50-trade target.",
+  reading="gross bps: average move per trade before costs, in hundredths of a percent of the trade's value. net bps: "
+          "after costs. A round trip costs about 16-17 bps at this size, so a rule needs a bigger gross move than that "
+          "per trade to make money.",
+  caveat="Paper only. On the stored history none of the 93 rules earned its costs and the book's policy lost about "
+         "₹3,400 a day (NOT READY, 2 of 7 checks). It runs to measure that forward, not because it is expected to win.",
+  related=["copilot"], aliases=["50-trade book", "Book trades today (open and closed)",
+                                "Rule tournament: last 20 days, after costs (best first)", "trades/day", "gross bps",
+                                "net bps", "net ₹/day", "rule"])
 E("copilot_brief", "Copilot morning brief", "Desk",
   "Written at 09:05 on weekdays: NIFTY's last day, five days and position vs its 20-day average, India VIX, yesterday's "
   "copilot result, the active rules and the day's risk plan, plus a watchlist of liquid stocks with a reason to watch "

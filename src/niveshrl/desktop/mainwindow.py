@@ -27,16 +27,13 @@ from ..livefeed import IST, Feed, market_open
 from . import data, theme
 from .panels import Panel
 from .explain import ExplainPanel
-from .panels.agent import AgentPanel
 from .panels.copilot import CopilotPanel
-from .panels.models import ModelsPanel
 from .panels.alerts import AlertsPanel, stock_snapshot
 from .panels.track import TrackPanel
 from .panels.desk import DeskPanel
 from .panels.glossary import GlossaryPanel
-from .panels.lab import LabPanel
 from .panels.market import MarketBase, MarketPanel, ticker_strip_text
-from .panels.research import PlanPanel, RankersPanel, RiskPanel
+from .panels.research import RiskPanel
 from .panels.screener import ScreenerPanel
 from .panels.stock import StockPanel
 from .panels.today import TodayPanel
@@ -112,14 +109,14 @@ class TickerStrip(QWidget):
             x += w
 
 
-PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, LabPanel, RankersPanel, RiskPanel, PlanPanel,
-          AlertsPanel, GlossaryPanel, DeskPanel, CopilotPanel, AgentPanel, TrackPanel, ModelsPanel]
+# Research screens with no measured trading edge (Rankers, Backtest lab, RL & plan, Models, the v1 Intraday agent)
+# were removed from the app on 2026-11-17; their code and results stay in the repo and on the command line.
+PANELS = [MarketPanel, TodayPanel, ScreenerPanel, WatchlistPanel, RiskPanel, AlertsPanel, GlossaryPanel, DeskPanel,
+          CopilotPanel, TrackPanel]
 # Sidebar order: (code, label). Ctrl+1 … Ctrl+0 jump to these in order.
 NAV = [("MKT", "Market"), ("TODAY", "Today"), ("SCRN", "Screener"), ("WATCH", "Watchlist"), ("DESK", "My desk"),
-       ("COPILOT", "Intraday copilot"), ("ALGO", "Intraday agent"), ("TRACK", "Performance"),
-       ("DES", "Stock"),
-       ("RANK", "Rankers"), ("LAB", "Backtest lab"), ("RISK", "Risk"), ("PLAN", "RL & plan"), ("ALRT", "Alerts"),
-       ("MODELS", "Models"), ("GLOS", "Glossary")]
+       ("COPILOT", "Algo trader"), ("TRACK", "Performance"), ("DES", "Stock"), ("RISK", "Risk"), ("ALRT", "Alerts"),
+       ("GLOS", "Glossary")]
 
 
 class MainWindow(QMainWindow):
@@ -164,7 +161,7 @@ class MainWindow(QMainWindow):
         self.back_btn.setEnabled(False)
         tb.addWidget(self.back_btn)
         self.cmd = QLineEdit()
-        self.cmd.setPlaceholderText("Command: RELIANCE <Enter> · MKT · TODAY · SCRN · WATCH · LAB · RANK · RISK · PLAN · ALRT · HELP   (Ctrl+K)")
+        self.cmd.setPlaceholderText("Command: RELIANCE <Enter> · MKT · TODAY · SCRN · WATCH · DESK · COPILOT · RISK · ALRT · HELP   (Ctrl+K)")
         self.cmd.setMinimumWidth(520)
         self.cmd.returnPressed.connect(self._command)
         self.completer = QCompleter()
@@ -574,8 +571,8 @@ class MainWindow(QMainWindow):
     def _about(self) -> None:
         QMessageBox.information(self, "NiveshRL", (
             "NiveshRL trading desk\n\n"
-            "Commands (Ctrl+K): type a symbol (RELIANCE) or a screen code: MKT, TODAY, SCRN, WATCH, LAB, RANK, RISK, "
-            "PLAN, ALRT, DES, GLOS.\nPick a screen in the left menu (or Ctrl+1 … Ctrl+0; F1 = Glossary); Alt+Left goes back.\n"
+            "Commands (Ctrl+K): type a symbol (RELIANCE) or a screen code: MKT, TODAY, SCRN, WATCH, DESK, COPILOT, RISK, "
+            "TRACK, ALRT, DES, GLOS.\nPick a screen in the left menu (or Ctrl+1 … Ctrl+0; F1 = Glossary); Alt+Left goes back.\n"
             "Explanations: click any label marked ⓘ, a KPI tile or a chart's 'What am I looking at?' button; right-click "
             "a table header or value. Esc closes the Explain panel.\n"
             "Charts: mouse wheel zooms time, drag pans, the range buttons (1M … All) jump, double-click resets.\n"
