@@ -1,22 +1,22 @@
 # Intraday copilot: money-readiness benchmark
 
-Generated 2026-11-16 23:41. 81 trading days of 5-minute bars; the first days train the model (walk-forward), leaving **66 evaluation days** (design 2026-08-11 to 2026-09-25, untouched holdout 2026-09-28 to 2026-11-16). 2,290 cards (every signal, taken or not). Universe: the 150 most-traded stocks by trailing turnover (point in time). ₹1,00,000 pool, 1% risk per trade, ≤ 3 trades a day, NSE intraday costs + 0.03% slippage per side.
+Generated 2026-11-17 09:50. 81 trading days of 5-minute bars; the first days train the model (walk-forward), leaving **66 evaluation days** (design 2026-08-11 to 2026-09-25, untouched holdout 2026-09-28 to 2026-11-16). 2,290 cards (every signal, taken or not). Universe: the 150 most-traded stocks by trailing turnover (point in time). ₹1,00,000 pool, 1% risk per trade, ≤ 3 trades a day, NSE intraday costs + 0.03% slippage per side.
 
 ## The live policy (adaptive rules, 2R exits)
 
 | Test | Result | Pass |
 | --- | --- | --- |
-| Trades in evaluation | 115 | ✓ |
-| Net ₹ on the untouched holdout | ₹-6,993 | ✗ |
-| Mean daily P&L, 90% bootstrap CI | ₹-221 [-456, +10] | ✗ |
-| Deflated Sharpe (vs best of all variants by luck) | 0.01 | ✗ |
-| Probability of backtest overfitting | 0.65 | ✗ |
-| Matched random entries: p-value | 0.77 | ✗ |
-| Net ₹ with slippage doubled | ₹-20,704 | ✗ |
+| Trades in evaluation | 197 | ✓ |
+| Net ₹ on the untouched holdout | ₹-7,353 | ✗ |
+| Mean daily P&L, 90% bootstrap CI | ₹-275 [-634, +76] | ✗ |
+| Deflated Sharpe (vs best of all variants by luck) | 0.02 | ✗ |
+| Probability of backtest overfitting | 0.67 | ✗ |
+| Matched random entries: p-value | 0.37 | ✗ |
+| Net ₹ with slippage doubled | ₹-28,497 | ✗ |
 
-**Verdict: NOT READY** (1/7 checks). Whole evaluation: net ₹-14,563, 33% winning days, max drawdown ₹-19,846.
+**Verdict: NOT READY** (1/7 checks). Whole evaluation: net ₹-18,162, 42% winning days, max drawdown ₹-19,260.
 
-Matched random control: policy -0.13R per trade vs random median -0.07R (95th percentile 0.04R).
+Matched random control: policy -0.09R per trade vs random median -0.11R (95th percentile -0.02R).
 
 ## Every variant tried (all count toward the deflated Sharpe and PBO)
 
@@ -36,7 +36,7 @@ Matched random control: policy -0.13R per trade vs random median -0.07R (95th pe
 | trend_pullback only · 2R | 104 | -8,720 | -4,345 | -14,447 | 33% | -0.098 |
 | adaptive, loose tuner: no t-test (rejected) · 2R | 96 | -15,798 | -12,551 | -20,857 | 26% | -0.183 |
 | adaptive, card-level t (rejected) · 2R | 95 | -13,824 | -10,577 | -18,812 | 29% | -0.158 |
-| adaptive (live policy) · 2R | 115 | -14,563 | -6,993 | -20,704 | 33% | -0.141 |
+| adaptive (live policy) · 2R | 197 | -18,162 | -7,353 | -28,497 | 42% | -0.129 |
 
 Best variant chosen on the design half: **model P≥0.50 · hold to close** → holdout ₹-4,985, verdict NOT READY (2/7).
 
@@ -53,11 +53,13 @@ Best variant chosen on the design half: **model P≥0.50 · hold to close** → 
 | vwap_hold | long | 69 | -0.046 |
 | vwap_hold | short | 46 | -0.011 |
 
+## Does the P(win) model have skill?
+
+At each of 14 walk-forward refits the model was scored on held-out days before it could filter trades (needs AUC ≥ 0.55 and a positive Brier skill score vs the base rate). It qualified at **0 of 14** refits; held-out AUC ranged 0.35–0.57, Brier skill -0.234 to +0.010. When it does not qualify, the live policy runs on the rules alone.
+
 ## What the adaptive policy learned over the replay
 
 - 2026-08-04: orb15.enabled True → False (last 11 days: 171 cards averaged -0.16R (t -2.1))
-- 2026-09-11: rs_breakout.min_p 0.45 → 0.4 (the 41 cards with P between 0.40 and 0.45 averaged +0.24R (t 1.5): lowered the bar to include them)
-- 2026-10-22: rs_breakout.min_p 0.4 → 0.45 (the 59 cards with P between 0.40 and 0.45 averaged -0.18R (t -2.0): raised the bar to drop them)
 
 ## For comparison: the v1 agent's replay
 

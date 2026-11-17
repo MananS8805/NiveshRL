@@ -148,8 +148,10 @@ holdout days; the 90% stationary-bootstrap lower bound of mean daily P&L above z
 variants tried (Bailey & López de Prado 2014); probability of backtest overfitting < 0.5 (CSCV, Bailey et al. 2017);
 beating random entries matched on day, bar, side and stop width (p < 0.05); and staying positive with slippage doubled.
 *Measured* (87 days of 5-minute bars, Jul-Nov 2026, point-in-time universe, 66 evaluation days, 15 variants including
-two rejected versions of the tuner): **no variant is money-ready.** The live policy passed 1/7 (net −₹14,563, holdout
-−₹6,993, matched-random p 0.77, PBO 0.65); the best variant on the design half lost on the holdout. Per-setup average R
+two rejected versions of the tuner): **no variant is money-ready.** The live policy passed 1/7 (net −₹18,162, holdout
+−₹7,353, matched-random p 0.37, PBO 0.67); the best variant on the design half lost on the holdout. The P(win) model
+must show held-out skill (AUC ≥ 0.55 and a positive Brier skill score) before it may filter trades; it qualified at
+0 of 14 walk-forward refits (AUC 0.35-0.57), so the copilot currently runs on its rules and tuner alone. Per-setup average R
 was between −0.09 and +0.03. One variant (rules only, hold to close) was positive in both halves; it was noticed after
 seeing the holdout, so it is tracked as a forward hypothesis on live days, not traded. Full report:
 [report/results/copilot_benchmark.md](report/results/copilot_benchmark.md).
@@ -257,7 +259,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 | VWAP trend (Zarattini & Aziz 2023) | Rules | rejected | Long above the session VWAP, short below, re-checked every bar. | trades 472 · avg R / trade -0.141 · net ₹ (₹1L pool) -66,466 |
 | Turtle / Donchian 55-20 breakout | Rules | research | Classic trend following: buy a close above the 55-day high, sell a close below the 20-day low. | CAGR +0.128 · Sharpe 0.752 · max drawdown -0.347 |
 | Connors RSI(2) mean reversion | Rules | rejected | Buy short dips in uptrends: close > 200-day average and 2-day RSI < 10; sell when close > 5-day average. | CAGR -0.005 · Sharpe 0.064 · max drawdown -0.589 |
-| Intraday copilot: setup scorer (LightGBM) + evidence tuner | Machine learning | shadow | Score each copilot setup card with P(it ends positive after NSE costs); the tuner benches setups and moves probability bars from the evidence of every card. | trades 115 · net -14,563 · holdout_net -6,993 · net_2x_costs -20,704 |
+| Intraday copilot: setup scorer (LightGBM) + evidence tuner | Machine learning | shadow | Score each copilot setup card with P(it ends positive after NSE costs); the tuner benches setups and moves probability bars from the evidence of every card. | trades 197 · net -18,162 · holdout_net -7,353 · net_2x_costs -28,497 |
 
 ### FFNN ranker (Takeuchi & Lee)
 - **Job:** Rank all NIFTY 200 stocks by the chance of beating the median over the next month.
@@ -506,8 +508,8 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Inputs:** Setup, side, minute, gap, relative volume, volume pace, VWAP distance, stop width, strength vs NIFTY, NIFTY trend, range used, position in the day's range, EMA spread, ADR, cost in R.
 - **Training:** Walk-forward by day; refit every 5 trading days on all cards (replay + live).
 - **Where it shows:** Intraday copilot (cards, Rules & learning, Scorecard)
-- **Limits:** Replay over 66 evaluation days did not pass the money tests (1/7); no variant beat matched random entries. Paper only until the forward record passes.
-- **Measured:** trades 115 · net -14,563 · holdout_net -6,993 · net_2x_costs -20,704
+- **Limits:** Replay over 66 evaluation days did not pass the money tests (1/7); the model showed no held-out skill at 0 of 14 refits, so it is gated off and the rules decide. Paper only until the forward record passes.
+- **Measured:** trades 197 · net -18,162 · holdout_net -7,353 · net_2x_costs -28,497
 
 <!-- models:end -->
 

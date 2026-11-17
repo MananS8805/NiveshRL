@@ -147,6 +147,7 @@ class _CopilotDay:
                         "positions": acct.open_positions, "trades": [t.to_dict() for t in trades], "log": log[-200:],
                         "day_pnl": round(sum(t.net for t in trades) + sum(p["unrealized"] for p in acct.open_positions), 2),
                         "rules": {k: v for k, v in self.cp.rules.items() if k != "log"},
+                        "model": {"skilled": self.cp.model.skilled, **self.cp.model.skill},
                         "message": f"{len(cards)} setups so far, {len(trades)} closed, {len(acct.open_positions)} open."})
         except Exception as e:                                  # noqa: BLE001
             _cp_status({"phase": "error", "day": self.day, "message": f"copilot error: {e}"})

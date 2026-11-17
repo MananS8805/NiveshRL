@@ -71,7 +71,9 @@ def build_cards(warmup: int = 6, progress=None) -> pd.DataFrame:
 def walk_forward_p(cards: pd.DataFrame, cfg: dict) -> pd.DataFrame:
     days = sorted(cards["day"].unique())
     cards = cards.copy()
-    cards["p"] = np.nan
+    cards["p"] = np.nan                                     # gated: only from a model with held-out skill (live policy)
+    cards["p_raw"] = np.nan                                 # ungated model output (the fixed "model P>=x" research variants)
+    skills = []
     m, last_fit = None, -10 ** 9
     for i, d in enumerate(days):
         if i < cfg["model"]["min_train_days"]:
@@ -79,9 +81,12 @@ def walk_forward_p(cards: pd.DataFrame, cfg: dict) -> pd.DataFrame:
         if i - last_fit >= cfg["model"]["refit_every_days"]:
             m = CardModel.fit(cards[cards["day"] < d])
             last_fit = i
+            skills.append({"day": d, **m.skill, "skilled": m.skilled})
         sel = cards["day"] == d
         if m is not None and m.ready:
-            cards.loc[sel, "p"] = m.prob(cards[sel])
+            cards.loc[sel, "p_raw"] = m.prob(cards[sel])
+            cards.loc[sel, "p"] = m.gated_prob(cards[sel])
+    cards.attrs["skills"] = skills
     return cards
 
 
@@ -125,8 +130,10 @@ def simulate(cards: pd.DataFrame, cfg: dict, warm_days: int):
     state = {k: json.loads(json.dumps(start)) for k, v in V.items() if v.get("adaptive")}
     taken_rows = []
     for d in days:
-        cd = cards[cards["day"] == d]
+        day_cards = cards[cards["day"] == d]
+        raw = day_cards.assign(p=day_cards["p_raw"]) if "p_raw" in day_cards else day_cards
         for name, v in V.items():
+            cd = day_cards if name == LIVE else raw             # only the live policy obeys the skill gate
             if v.get("adaptive"):
                 rl = state[name]
             else:
@@ -140,8 +147,10 @@ def simulate(cards: pd.DataFrame, cfg: dict, warm_days: int):
                 if name == LIVE:
                     taken_rows.append(cd.loc[idx].assign(rcol=rcol))
         known = cards[cards["day"] <= d]
+        known_raw = known.assign(p=known["p_raw"]) if "p_raw" in known else known
         for name in state:                                                 # each adaptive variant learns after the close
-            state[name], _ = tune(state[name], known, d, cfg["tuning"] | V[name].get("tuning", {}))
+            state[name], _ = tune(state[name], known if name == LIVE else known_raw, d,
+                                  cfg["tuning"] | V[name].get("tuning", {}))
     json_rules = state[LIVE]
     taken = pd.concat(taken_rows, ignore_index=True) if taken_rows else pd.DataFrame()
     return net1, net2, json_rules, taken, trades

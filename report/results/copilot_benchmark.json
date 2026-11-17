@@ -1,5 +1,5 @@
 {
- "generated": "2026-11-16 23:41",
+ "generated": "2026-11-17 09:50",
  "days_total": 81,
  "eval_days": 66,
  "design_days": [
@@ -29,29 +29,29 @@
   "adaptive (live policy) \u00b7 2R"
  ],
  "pbo": {
-  "pbo": 0.6547619047619048,
+  "pbo": 0.6666666666666666,
   "combos": 252,
   "median_oos_rank": 0.3125
  },
  "live_policy": {
-  "trades": 115,
-  "net": -14563.20183098325,
-  "holdout_net": -6992.507545656095,
+  "trades": 197,
+  "net": -18161.90538352332,
+  "holdout_net": -7352.517682198293,
   "boot": {
    "n": 66,
-   "mean": -220.6545731967159,
-   "lo90": -455.8036868710802,
-   "hi90": 10.113801498509648,
-   "p_pos": 0.0584
+   "mean": -275.1803845988382,
+   "lo90": -633.6331093589894,
+   "hi90": 75.92370009885907,
+   "p_pos": 0.0966
   },
-  "dsr": 0.013769757570454837,
-  "pbo": 0.6547619047619048,
-  "random_p": 0.77,
-  "net_2x": -20703.833248799812,
-  "sharpe_daily": -0.14115354423886903,
-  "sr0": 0.1373173308370114,
-  "win_days": 0.3333333333333333,
-  "max_dd": -19845.79110619493,
+  "dsr": 0.019459567499867204,
+  "pbo": 0.6666666666666666,
+  "random_p": 0.37,
+  "net_2x": -28497.17905600679,
+  "sharpe_daily": -0.12890024964558544,
+  "sr0": 0.13552087438508179,
+  "win_days": 0.42424242424242425,
+  "max_dd": -19259.5543499809,
   "verdict": {
    "checks": {
     "enough_trades": true,
@@ -79,12 +79,12 @@
    "hi90": 534.9038870427115,
    "p_pos": 0.6912
   },
-  "dsr": 0.24787914054870408,
-  "pbo": 0.6547619047619048,
+  "dsr": 0.25281216731760875,
+  "pbo": 0.6666666666666666,
   "random_p": NaN,
   "net_2x": 2677.2002948679965,
   "sharpe_daily": 0.058432000375238824,
-  "sr0": 0.1373173308370114,
+  "sr0": 0.13552087438508179,
   "win_days": 0.30303030303030304,
   "max_dd": -13336.326434477858,
   "verdict": {
@@ -231,18 +231,18 @@
   },
   {
    "variant": "adaptive (live policy) \u00b7 2R",
-   "trades": 115,
-   "net": -14563.0,
-   "holdout_net": -6993.0,
-   "net_2x_costs": -20704.0,
-   "win_days": 0.333,
-   "sharpe_daily": -0.141
+   "trades": 197,
+   "net": -18162.0,
+   "holdout_net": -7353.0,
+   "net_2x_costs": -28497.0,
+   "win_days": 0.424,
+   "sharpe_daily": -0.129
   }
  ],
  "random_mean_r": {
-  "policy": -0.12663653766072389,
-  "random_median": -0.06941419346539042,
-  "random_p95": 0.04196190378848646
+  "policy": -0.0921924131143316,
+  "random_median": -0.1112066013492422,
+  "random_p95": -0.017694262003348567
  },
  "per_setup": [
   {
@@ -325,26 +325,120 @@
    "mean_r": -0.165,
    "t": -2.1,
    "why": "last 11 days: 171 cards averaged -0.16R (t -2.1)"
+  }
+ ],
+ "model_skill": [
+  {
+   "day": "2026-08-11",
+   "n": 61,
+   "base_rate": 0.4142,
+   "auc": 0.4138,
+   "brier_skill": -0.1787,
+   "skilled": false
   },
   {
-   "day": "2026-09-11",
-   "rule": "rs_breakout.min_p",
-   "from": 0.45,
-   "to": 0.4,
-   "n": 41,
-   "mean_r": 0.235,
-   "t": 1.54,
-   "why": "the 41 cards with P between 0.40 and 0.45 averaged +0.24R (t 1.5): lowered the bar to include them"
+   "day": "2026-08-18",
+   "n": 73,
+   "base_rate": 0.409,
+   "auc": 0.5492,
+   "brier_skill": -0.2338,
+   "skilled": false
   },
   {
-   "day": "2026-10-22",
-   "rule": "rs_breakout.min_p",
-   "from": 0.4,
-   "to": 0.45,
-   "n": 59,
-   "mean_r": -0.18,
-   "t": -2.0,
-   "why": "the 59 cards with P between 0.40 and 0.45 averaged -0.18R (t -2.0): raised the bar to drop them"
+   "day": "2026-08-25",
+   "n": 80,
+   "base_rate": 0.4113,
+   "auc": 0.5469,
+   "brier_skill": -0.1425,
+   "skilled": false
+  },
+  {
+   "day": "2026-09-01",
+   "n": 111,
+   "base_rate": 0.4158,
+   "auc": 0.3489,
+   "brier_skill": -0.0984,
+   "skilled": false
+  },
+  {
+   "day": "2026-09-08",
+   "n": 180,
+   "base_rate": 0.4113,
+   "auc": 0.4691,
+   "brier_skill": -0.0181,
+   "skilled": false
+  },
+  {
+   "day": "2026-09-16",
+   "n": 183,
+   "base_rate": 0.4087,
+   "auc": 0.5535,
+   "brier_skill": -0.0408,
+   "skilled": false
+  },
+  {
+   "day": "2026-09-23",
+   "n": 232,
+   "base_rate": 0.4046,
+   "auc": 0.5717,
+   "brier_skill": -0.105,
+   "skilled": false
+  },
+  {
+   "day": "2026-09-30",
+   "n": 277,
+   "base_rate": 0.4197,
+   "auc": 0.5257,
+   "brier_skill": -0.0518,
+   "skilled": false
+  },
+  {
+   "day": "2026-10-08",
+   "n": 373,
+   "base_rate": 0.4205,
+   "auc": 0.4913,
+   "brier_skill": -0.1368,
+   "skilled": false
+  },
+  {
+   "day": "2026-10-15",
+   "n": 431,
+   "base_rate": 0.4181,
+   "auc": 0.506,
+   "brier_skill": -0.0609,
+   "skilled": false
+  },
+  {
+   "day": "2026-10-23",
+   "n": 417,
+   "base_rate": 0.405,
+   "auc": 0.5025,
+   "brier_skill": -0.0715,
+   "skilled": false
+  },
+  {
+   "day": "2026-10-30",
+   "n": 501,
+   "base_rate": 0.4201,
+   "auc": 0.4971,
+   "brier_skill": -0.0323,
+   "skilled": false
+  },
+  {
+   "day": "2026-11-06",
+   "n": 564,
+   "base_rate": 0.4199,
+   "auc": 0.4751,
+   "brier_skill": -0.0458,
+   "skilled": false
+  },
+  {
+   "day": "2026-11-16",
+   "n": 565,
+   "base_rate": 0.4221,
+   "auc": 0.5041,
+   "brier_skill": 0.0102,
+   "skilled": false
   }
  ],
  "v1_agent": {

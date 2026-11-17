@@ -115,6 +115,29 @@ def test_verdict_labels():
     assert RB.verdict(bad)["label"] == "NOT READY"
 
 
+def _model_cards(signal: float, n_days=40, per_day=25, seed=0):
+    rng = np.random.default_rng(seed)
+    rows = []
+    for i in range(n_days):
+        for _ in range(per_day):
+            x = rng.standard_normal()
+            rows.append({"day": str(pd.Timestamp("2026-08-01") + pd.Timedelta(days=i))[:10], "setup": "orb15", "side": "long",
+                         "minute": 30, "gap": 0.0, "rvol_bar": 1.0, "vol_pace": 1.0, "vwap_dist": x, "stop_pct": 0.005,
+                         "rs": 0.0, "nifty_trend": 1.0, "range_used": 0.5, "pos_in_range": 0.5, "ema_spread": 0.0,
+                         "adr": 0.02, "cost_r": 0.1, "r": signal * x + rng.standard_normal()})
+    return pd.DataFrame(rows)
+
+
+def test_model_without_skill_is_gated():
+    from niveshrl.intraday.copilot.model import CardModel
+    noise = CardModel.fit(_model_cards(0.0))
+    assert noise.ready and not noise.skilled
+    assert np.isnan(noise.gated_prob(_model_cards(0.0).head(5))).all()
+    real = CardModel.fit(_model_cards(1.5))
+    assert real.skilled and real.skill["auc"] >= 0.55
+    assert np.isfinite(real.gated_prob(_model_cards(1.5).head(5))).all()
+
+
 def _daily(seed, last_range=None, last_move=0.0, n=30):
     rng = np.random.default_rng(seed)
     c = 100 * np.exp(np.cumsum(0.01 * rng.standard_normal(n)))

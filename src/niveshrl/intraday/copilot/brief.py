@@ -99,6 +99,13 @@ def morning_brief(day: str, tickers: list[str], cfg: dict) -> dict:
         lines.append(f"Yesterday ({last.get('day')}): {last.get('trades', 0)} trade(s), net ₹{last.get('net', 0):+,.0f}.")
     on = [f"{s} (P ≥ {v['min_p']:.0%})" for s, v in r["setups"].items() if v.get("enabled", True)]
     off = [s for s, v in r["setups"].items() if not v.get("enabled", True)]
+    from .engine import MODEL
+    from .model import CardModel
+    m = CardModel.load(MODEL)
+    sk = m.skill
+    lines.append("P(win) model: " + (f"has held-out skill (AUC {sk.get('auc', 0):.2f}); it filters trades." if m.skilled else
+                 f"no measured skill on held-out days (AUC {sk.get('auc', float('nan')):.2f}, needs 0.55 and a positive "
+                 "Brier skill), so the rules decide alone." if m.ready else "not trained yet; the rules decide alone."))
     lines.append("Active setups: " + ", ".join(on) + (f". Benched by the learner: {', '.join(off)}." if off else "."))
     lines.append(f"Plan: at most {g['max_trades_per_day']} trades, ₹{risk:,.0f} risk each, stop for the day at "
                  f"−₹{cfg['pool'] * g['daily_loss_stop']:,.0f}; no new entries after {r.get('last_entry')}; square-off {g['square_off']}.")

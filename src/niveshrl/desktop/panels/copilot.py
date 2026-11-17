@@ -68,7 +68,7 @@ class CopilotPanel(Panel):
         lay.addLayout(bar)
         self.status = muted("")
         lay.addWidget(self.status)
-        self.kpis = KpiRow(cols=6)
+        self.kpis = KpiRow(cols=7)
         lay.addWidget(self.kpis)
         self.tabs = QTabWidget()
         lay.addWidget(self.tabs, 1)
@@ -177,6 +177,8 @@ class CopilotPanel(Panel):
             ("Copilot backtest verdict", verdict.get("label", "not run"), theme.GREEN if verdict.get("label") == "MONEY-READY" else theme.AMBER,
              f"{verdict.get('passed', 0)}/{verdict.get('total', 7)} checks"),
             ("Copilot run mode", "AUTO" if self.runner.auto else "manual", None, "running" if self.runner.running else "not running"),
+            ("Copilot model skill", self._skill_text(), theme.GREEN if (live.get("model") or {}).get("skilled") else theme.AMBER,
+             "held-out AUC; needs 0.55 to filter trades"),
         ])
         if live.get("message"):
             self.status.setText(f"{live.get('phase', '')}: {live.get('message')} ({str(live.get('at', ''))[11:16]})")
@@ -185,6 +187,18 @@ class CopilotPanel(Panel):
         self._reviews()
         self._scorecard(bench, days)
         self._rules()
+
+    def _skill_text(self) -> str:
+        try:
+            from ...intraday.copilot.engine import MODEL
+            from ...intraday.copilot.model import CardModel
+            m = CardModel.load(MODEL)
+        except Exception:                                   # noqa: BLE001
+            return "—"
+        if not m.ready:
+            return "not trained"
+        auc = m.skill.get("auc")
+        return ("skilled" if m.skilled else "no skill") + (f" · AUC {auc:.2f}" if auc is not None else "")
 
     def _brief(self, d: str) -> None:
         b = load_json(f"briefs/{d}.json")

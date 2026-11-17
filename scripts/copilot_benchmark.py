@@ -70,7 +70,7 @@ def main() -> None:
     t0 = time.time()
     cache = CDIR / "bench_cards.parquet"
     if a.cached and cache.exists():
-        cards = pd.read_parquet(cache)
+        cards = B.walk_forward_p(pd.read_parquet(cache).drop(columns=["p", "p_raw"], errors="ignore"), cfg)
     else:
         print("building cards…", flush=True)
         cards = B.build_cards(progress=lambda d, f: print(f"  {d} {f:.0%}", flush=True) if int(f * 100) % 10 == 0 else None)
@@ -100,6 +100,7 @@ def main() -> None:
                                           "random_p95": float(np.nanquantile(rand_live, 0.95)) if len(rand_live) else None},
            "per_setup": cards[cards["day"].isin(ev)].groupby(["setup", "side"])["r_2r_1x"].agg(["count", "mean"]).round(3).reset_index().to_dict("records"),
            "final_rules": {k: v for k, v in final_rules.items() if k != "log"}, "rule_changes": final_rules.get("log", []),
+           "model_skill": cards.attrs.get("skills", []),
            "v1_agent": v1_check()}
     for c in net1.columns:
         x = net1[c].astype(float)
@@ -159,6 +160,17 @@ def markdown(r: dict) -> str:
           f"verdict {b['verdict']['label']} ({b['verdict']['passed']}/{b['verdict']['total']}).", "",
           "## Every setup, all cards in the evaluation (full size, 2R exits)", "", "| Setup | Side | Cards | Mean R |", "| --- | --- | --- | --- |"]
     L += [f"| {p['setup']} | {p['side']} | {p['count']} | {p['mean']:+.3f} |" for p in r["per_setup"]]
+    sk = r.get("model_skill", [])
+    if sk:
+        n_sk = sum(1 for s in sk if s.get("skilled"))
+        aucs = [s["auc"] for s in sk if s.get("auc") is not None]
+        bss = [s["brier_skill"] for s in sk if s.get("brier_skill") is not None]
+        L += ["", "## Does the P(win) model have skill?", "",
+              f"At each of {len(sk)} walk-forward refits the model was scored on held-out days before it could filter trades "
+              f"(needs AUC ≥ 0.55 and a positive Brier skill score vs the base rate). It qualified at **{n_sk} of {len(sk)}** "
+              f"refits; held-out AUC ranged {min(aucs):.2f}–{max(aucs):.2f}"
+              + (f", Brier skill {min(bss):+.3f} to {max(bss):+.3f}." if bss else ".")
+              + " When it does not qualify, the live policy runs on the rules alone."]
     L += ["", "## What the adaptive policy learned over the replay", ""]
     L += [f"- {c['day']}: {c['rule']} {c['from']} → {c['to']} ({c['why']})" for c in r["rule_changes"][-15:]] or ["- no rule changes"]
     v1 = r.get("v1_agent")

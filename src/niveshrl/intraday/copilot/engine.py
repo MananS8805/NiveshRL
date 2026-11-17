@@ -43,7 +43,7 @@ def cards_frame(signals: list[sim.Signal], cfg: dict, model: CardModel | None, d
                                   "stop": s.stop, "cost_r": cost_r(s.ref, s.stop, s.side, cfg)})
     df = pd.DataFrame(rows)
     df = df[df["cost_r"] <= cfg["guardrails"]["cost_r_max"]].reset_index(drop=True)
-    df["p"] = model.prob(df) if model is not None and model.ready and len(df) else float("nan")
+    df["p"] = model.gated_prob(df) if model is not None and model.ready and len(df) else float("nan")   # NaN = rules decide
     df["key"] = df["ticker"] + "|" + df["ts"] + "|" + df["setup"] + "|" + df["side"]
     return df
 
@@ -212,7 +212,9 @@ class Copilot:
             m = CardModel.fit(allc)
             if m.ready:
                 m.save(MODEL)
-                refit = f"model refit on {m.n:,} cards over {len(m.days)} days"
+                self.model = m
+                refit = (f"model refit on {m.n:,} cards over {len(m.days)} days; held-out AUC {m.skill.get('auc', float('nan')):.2f}, "
+                         + ("skilled: it filters trades" if m.skilled else "not skilled: the rules decide alone"))
         rec = {"day": day, "pool_start": pool0, "pool_end": self.state["pool"], "trades": len(trades),
                "net": round(net, 2), "gross": round(sum(t.gross for t in trades), 2),
                "costs": round(sum(t.costs for t in trades), 2), "cards": int(len(cards)),

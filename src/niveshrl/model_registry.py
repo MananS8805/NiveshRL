@@ -236,8 +236,8 @@ CARDS: list[ModelCard] = [
               "trend, range used, position in the day's range, EMA spread, ADR, cost in R.",
               "Walk-forward by day; refit every 5 trading days on all cards (replay + live).",
               "Intraday copilot (cards, Rules & learning, Scorecard)",
-              "Replay over 66 evaluation days did not pass the money tests (1/7); no variant beat matched random entries. "
-              "Paper only until the forward record passes.", "shadow",
+              "Replay over 66 evaluation days did not pass the money tests (1/7); the model showed no held-out skill at 0 of 14 refits, "
+              "so it is gated off and the rules decide. Paper only until the forward record passes.", "shadow",
               _r("copilot_benchmark.csv", "adaptive (live policy) · 2R", ["trades", "net", "holdout_net", "net_2x_costs"])),
 ]
 

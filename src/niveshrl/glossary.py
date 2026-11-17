@@ -1382,11 +1382,13 @@ E("copilot", "Intraday copilot", "Desk",
       "Stops sit at structural levels (at least 0.3% of price) so costs stay a small part of 1R; 1% risk per trade; a 2% "
       "daily loss stop; square-off 15:15.",
   reading="Copilot pool and today: the paper account. Backtest verdict: how many of the seven money tests the replay "
-          "passed. Forward trades: paper trades since it went live (no verdict before 50).",
+          "passed. Forward trades: paper trades since it went live (no verdict before 50). Model skill: the P(win) model's "
+          "AUC on held-out days; below 0.55 (or with no Brier skill over the base rate) it may not filter trades and the "
+          "rules decide alone.",
   caveat="Paper only. Its replay did not pass the money tests: treat every card as information, not a recommendation.",
   related=["copilot_card", "copilot_review", "copilot_scorecard", "copilot_rules"],
   aliases=["Copilot pool", "Copilot today", "Copilot setups today", "Copilot forward trades", "Copilot backtest verdict",
-           "Copilot run mode"])
+           "Copilot run mode", "Copilot model skill"])
 E("copilot_brief", "Copilot morning brief", "Desk",
   "Written at 09:05 on weekdays: NIFTY's last day, five days and position vs its 20-day average, India VIX, yesterday's "
   "copilot result, the active rules and the day's risk plan, plus a watchlist of liquid stocks with a reason to watch "
