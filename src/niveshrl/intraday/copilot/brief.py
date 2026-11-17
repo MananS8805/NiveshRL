@@ -162,9 +162,13 @@ def day_review(day: str, rec: dict, cards: pd.DataFrame, trades, changes: list[d
         sk = cards[~cards["take"].astype(bool)] if "take" in cards else cards.iloc[0:0]
         if len(sk) >= 5:
             m = sk["r"].mean()
-            (strengths if m < 0 else weaknesses).append(
-                f"The {len(sk)} skipped setups would have averaged {m:+.2f}R: "
-                + ("skipping them was right." if m < 0 else "the filters cost money today."))
+            line = f"The {len(sk)} skipped setups would have averaged {m:+.2f}R: "
+            if m <= -0.1:
+                strengths.append(line + "skipping them was right.")
+            elif m >= 0.1:
+                weaknesses.append(line + "the filters cost money today.")
+            else:                                        # within ±0.1R one day's skips prove nothing either way
+                summary.append(line + "skipping them made little difference.")
         missed = sk[(sk["reason"] == "target")] if "reason" in sk else sk.iloc[0:0]
         if len(missed):
             top = missed.sort_values("r", ascending=False).head(2)
