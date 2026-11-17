@@ -85,7 +85,7 @@ def passes(card, rules: dict) -> tuple[bool, str]:
     p = card.get("p", float("nan"))
     if p == p and p < sr.get("min_p", 0.45):
         return False, f"P(win) {p:.0%} below the {sr.get('min_p', 0.45):.0%} bar"
-    return True, "passes the rules" + (f" (P(win) {p:.0%})" if p == p else " (no model yet: rules only)")
+    return True, "passes the rules" + (f" (P(win) {p:.0%})" if p == p else " (model has no proven skill: rules decide)")
 
 
 def choose_day(cards: pd.DataFrame, rules: dict, g: dict, rcol: str = "r", exit_col: str = "exit_bar") -> list[int]:
@@ -150,7 +150,7 @@ class Copilot:
         sigs = all_signals(bars, ctx, self.g, nifty)
         return cards_frame(sigs, self.cfg, self.model, day)
 
-    def run(self, bars, ctx, nifty, frozen: dict, day: str, close_at_end: bool = False):
+    def run(self, bars, ctx, nifty, frozen: dict, day: str, close_at_end: bool = False, log: bool = False):
         cards = self.cards(bars, ctx, nifty, day)
         taken = 0
         rows = cards.sort_values(["bar", "p"], ascending=[True, False]).iterrows() if len(cards) else iter(())
@@ -166,6 +166,9 @@ class Copilot:
         if len(cards):
             cards["take"] = cards["key"].map(lambda k: frozen.get(k, {}).get("take", False))
             cards["why"] = cards["key"].map(lambda k: frozen.get(k, {}).get("why", ""))
+            if log:                                          # write each decision before its outcome can be known
+                from .forward_log import append, decisions_from
+                append(decisions_from(cards, day))
         sigs = [sim.Signal(r.ticker, pd.Timestamp(r.ts), int(r.bar), r.setup, r.side, float(r.ref), float(r.stop))
                 for r in cards.itertuples() if r.take] if len(cards) else []
         look = {(r.ticker, str(pd.Timestamp(r.ts))): r for r in cards.itertuples()} if len(cards) else {}
@@ -195,6 +198,9 @@ class Copilot:
         if len(cards):
             cards = outcome_cols(cards, bars, self.cfg)
             cards["source"] = "live"
+            from .forward_log import append, decisions_from, outcomes_from
+            append(decisions_from(cards, day))                 # any decision not yet logged, then every outcome
+            append(outcomes_from(cards, day))
         hist = pd.read_parquet(CARDS) if CARDS.exists() else pd.DataFrame()
         if len(hist):
             hist = hist[~((hist["day"] == day) & (hist.get("source", "live") == "live"))]
@@ -229,6 +235,9 @@ class Copilot:
             old = old[old["day"] != day]
         if len(new) or len(old):
             pd.concat([old, new], ignore_index=True).to_csv(tp, index=False)
+        from .forward_log import verify
+        chain = verify()
+        rec["forward_log"] = {k: chain[k] for k in ("ok", "entries", "head")}
         review = day_review(day, rec, cards, trades, changes, nifty, self.state, refit)
         save_json(f"reviews/{day}.json", review)
         return rec | {"review": review}

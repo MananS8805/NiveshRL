@@ -190,6 +190,10 @@ def day_review(day: str, rec: dict, cards: pd.DataFrame, trades, changes: list[d
                          "(changes need 20-30 outcomes over at least 8 days and a clear per-day t-statistic).")
     if refit:
         learnings.append(refit.capitalize() + ".")
+    fl = rec.get("forward_log")
+    if fl:
+        learnings.append(f"Forward log: {fl['entries']} hash-chained entries, chain {'intact' if fl['ok'] else 'BROKEN'} "
+                         f"(head {fl['head'][:12]}). Every decision was recorded before its outcome.")
     days = state.get("days", [])
     fwd = pd.DataFrame(days)
     if len(fwd):

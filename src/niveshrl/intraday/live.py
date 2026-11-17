@@ -138,7 +138,7 @@ class _CopilotDay:
             b = {t: x for t, x in bars.items() if t in self.tickers}
             if nifty is not None and len(nifty) >= 3:
                 opening_update(self.day, b, ctx)
-            cards, trades, log, acct = self.cp.run(b, ctx, nifty, self.frozen, self.day)
+            cards, trades, log, acct = self.cp.run(b, ctx, nifty, self.frozen, self.day, log=True)
             self.path.write_text(json.dumps(self.frozen), encoding="utf-8")
             top = self.cp.top_cards(cards)
             _cp_status({"phase": "trading", "day": self.day, "at": now_ist().isoformat(timespec="seconds"),

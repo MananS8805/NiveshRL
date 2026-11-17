@@ -315,6 +315,16 @@ class CopilotPanel(Panel):
         else:
             parts.append("<h3>Forward paper record: none yet</h3><p>Starts on the first weekday the copilot runs.</p>")
         try:
+            from ...intraday.copilot.forward_log import verify
+            v = verify()
+            if v["entries"]:
+                parts.append(f"<h4>Forward log: {'chain intact' if v['ok'] else 'CHAIN BROKEN at entry ' + str(v['broken_at'])}</h4>"
+                             f"<p>{v['decisions']} decisions and {v['outcomes']} outcomes, each hash-chained to the one before "
+                             f"(head <code>{v['head'][:16]}…</code>). Decisions are written when made, outcomes after the close, "
+                             "so the record cannot be edited after the fact.</p>")
+        except Exception:                                   # noqa: BLE001
+            pass
+        try:
             from ...intraday.copilot.engine import forward_hypotheses
             for h in forward_hypotheses():
                 dd = pd.DataFrame(h["days"])

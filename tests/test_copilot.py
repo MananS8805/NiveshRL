@@ -128,6 +128,23 @@ def _model_cards(signal: float, n_days=40, per_day=25, seed=0):
     return pd.DataFrame(rows)
 
 
+def test_forward_log_is_append_only_and_tamper_evident(tmp_path, monkeypatch):
+    import niveshrl.intraday.copilot as CP
+    from niveshrl.intraday.copilot import forward_log as FL
+    monkeypatch.setattr(CP, "CDIR", tmp_path)
+    d = [{"type": "decision", "key": f"K{i}", "take": i % 2 == 0} for i in range(4)]
+    assert FL.append(d) == 4 and FL.append(d) == 0                     # the same decision is never logged twice
+    assert FL.append([{"type": "outcome", "key": "K0", "r_2r": 1.5}]) == 1
+    v = FL.verify()
+    assert v["ok"] and v["entries"] == 5 and v["decisions"] == 4 and v["outcomes"] == 1
+    p = tmp_path / "forward_log.jsonl"
+    lines = p.read_text(encoding="utf-8").splitlines()
+    lines[1] = lines[1].replace('"take": false', '"take": true')        # rewrite history: K1 "was taken"
+    p.write_text("\n".join(lines) + "\n", encoding="utf-8")
+    v = FL.verify()
+    assert not v["ok"] and v["broken_at"] == 1
+
+
 def test_exposure_split_allows_three_positions_and_matches_backtest():
     from niveshrl.intraday import sim
     from niveshrl.intraday.copilot.backtest import size_weight
