@@ -115,6 +115,27 @@ def test_verdict_labels():
     assert RB.verdict(bad)["label"] == "NOT READY"
 
 
+def _daily(seed, last_range=None, last_move=0.0, n=30):
+    rng = np.random.default_rng(seed)
+    c = 100 * np.exp(np.cumsum(0.01 * rng.standard_normal(n)))
+    c[-1] = c[-2] * (1 + last_move)
+    h, l = c * 1.01, c * 0.99
+    if last_range is not None:
+        h[-1], l[-1] = c[-1] * (1 + last_range / 2), c[-1] * (1 - last_range / 2)
+    v = np.full(n, 1e6)
+    return pd.DataFrame({"open": c, "high": h, "low": l, "close": c, "volume": v})
+
+
+def test_watchlist_ranks_tight_ranges_and_stays_varied():
+    from niveshrl.intraday.copilot.brief import watchlist
+    daily = {f"N{i}.NS": _daily(i, last_range=0.002 + 0.001 * i) for i in range(10)}      # ten narrow-range names
+    daily |= {f"M{i}.NS": _daily(50 + i, last_move=0.04 + 0.01 * i) for i in range(4)}   # four big movers
+    wl = watchlist(daily, k=9)
+    narrow = wl[wl["ticker"].str.startswith("N")]
+    assert len(narrow) <= 3 and set(wl["ticker"]) >= {f"M{i}.NS" for i in range(4)}
+    assert narrow["ticker"].iloc[0] == "N0.NS"                # the tightest range ranks first, not alphabetical order
+
+
 def test_engine_handles_a_day_without_setups(tmp_path, monkeypatch):
     import niveshrl.intraday.copilot as CP
     from niveshrl.intraday.copilot import engine as E

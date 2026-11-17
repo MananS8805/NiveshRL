@@ -44,9 +44,12 @@ def watchlist(daily: dict[str, pd.DataFrame], k: int = 15) -> pd.DataFrame:
         rvol = float(v.iloc[-1] / v.iloc[-21:-1].mean()) if v.iloc[-21:-1].mean() > 0 else np.nan
         chg = float(c.iloc[-1] / c.iloc[-2] - 1)
         why, score = [], 0.0
+        compression = 0.0
         if nr7 or inside:
-            why.append("NR7" if nr7 else "inside day")
-            score += 1.0
+            avg_rng = float(rng.iloc[-21:-1].mean())
+            compression = max(0.0, 1 - float(rng.iloc[-1]) / avg_rng) if avg_rng > 0 else 0.0
+            why.append(("NR7" if nr7 else "inside day") + f" (range {compression:.0%} below its 20-day average)")
+            score += 0.5 + compression                       # tighter coils rank higher, not alphabetical ties
         if close_loc >= 0.9 and rvol >= 1.3:
             why.append(f"closed at the high on {rvol:.1f}x volume")
             score += 1.5
@@ -60,9 +63,16 @@ def watchlist(daily: dict[str, pd.DataFrame], k: int = 15) -> pd.DataFrame:
             continue
         rows.append({"ticker": t, "why": "; ".join(why), "score": score, "close": float(last["close"]), "chg": chg,
                      "pdh": float(last["high"]), "pdl": float(last["low"]), "adr_pct": adr, "rvol": rvol,
-                     "bias": "long" if close_loc >= 0.9 else "short" if close_loc <= 0.1 else "either"})
+                     "bias": "long" if close_loc >= 0.9 else "short" if close_loc <= 0.1 else "either",
+                     "only_compression": len(why) == 1 and compression > 0})
     df = pd.DataFrame(rows)
-    return df.sort_values("score", ascending=False).head(k).reset_index(drop=True) if len(df) else df
+    if not len(df):
+        return df
+    df = df.sort_values("score", ascending=False)
+    # keep the list varied: at most a third of it may be names whose only reason is a narrow range
+    comp = df[df["only_compression"]].head(max(1, k // 3))
+    df = pd.concat([df[~df["only_compression"]], comp]).sort_values("score", ascending=False)
+    return df.head(k).drop(columns="only_compression").reset_index(drop=True)
 
 
 def morning_brief(day: str, tickers: list[str], cfg: dict) -> dict:
