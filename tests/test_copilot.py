@@ -115,6 +115,17 @@ def test_verdict_labels():
     assert RB.verdict(bad)["label"] == "NOT READY"
 
 
+def test_engine_handles_a_day_without_setups(tmp_path, monkeypatch):
+    import niveshrl.intraday.copilot as CP
+    from niveshrl.intraday.copilot import engine as E
+    monkeypatch.setattr(CP, "CDIR", tmp_path)
+    monkeypatch.setattr(E, "MODEL", tmp_path / "model.pkl")
+    cp = E.Copilot()
+    bars = {"S0.NS": _bars(0).iloc[:3]}                       # 09:30: too early for any setup
+    cards, trades, log, acct = cp.run(bars, {"S0.NS": CTX}, _bars(99).iloc[:3], {}, "2026-11-02")
+    assert len(cards) == 0 and trades == [] and len(cp.top_cards(cards)) == 0
+
+
 @pytest.mark.parametrize("close_at_end", [False, True])
 def test_engine_run_freezes_decisions(tmp_path, monkeypatch, close_at_end):
     import niveshrl.intraday.copilot as CP

@@ -153,7 +153,8 @@ class Copilot:
     def run(self, bars, ctx, nifty, frozen: dict, day: str, close_at_end: bool = False):
         cards = self.cards(bars, ctx, nifty, day)
         taken = 0
-        for _, c in cards.sort_values(["bar", "p"], ascending=[True, False]).iterrows():
+        rows = cards.sort_values(["bar", "p"], ascending=[True, False]).iterrows() if len(cards) else iter(())
+        for _, c in rows:                                  # an hour with no setups yet is normal, not an error
             if c["key"] in frozen:
                 taken += frozen[c["key"]]["take"]
                 continue
