@@ -27,7 +27,7 @@ from ..config import ROOT
 DAILY = ROOT / "data" / "daily"
 STEPS = ["prices", "technicals", "delivery", "fundamentals", "news", "sentiment", "nextday", "range", "stacked",
          "volatility", "regimes", "monitor",
-         "briefing"]
+         "swing_book", "briefing"]
 
 
 def latest_dir() -> Path | None:
@@ -272,6 +272,15 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
         ml.to_parquet(out / "monitor.parquet")
         return f"top {int((ml['list'] == 'watch for strength').sum())} / bottom {int((ml['list'] == 'watch for weakness').sum())}"
 
+    def swing_book():
+        """The swing plan as an automatic paper portfolio: tomorrow's open buys today's 'watch for strength' picks."""
+        from . import swing_book as SB
+        ml = pd.read_parquet(out / "monitor.parquet")
+        picks = [t for t in ml[ml["list"] == "watch for strength"].index if t in p.close.columns]
+        r = SB.daily_update(p, day, picks)
+        return (f"equity ₹{r.get('equity', 0):,.0f}, {len(r.get('open', []))} open, {len(r.get('queued', []))} queued "
+                f"for tomorrow's open")
+
     def briefing():
         from .regime import daily_regimes, load_regimes
         from .summary import briefing as brief, habits
@@ -301,7 +310,8 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
 
     for name, fn in [("technicals", technicals), ("delivery", delivery), ("fundamentals", fundamentals), ("news", news),
                      ("sentiment", sentiment), ("nextday", nextday), ("range", range_), ("stacked", stacked),
-                     ("volatility", volatility), ("regimes", regimes), ("monitor", monitor), ("briefing", briefing)]:
+                     ("volatility", volatility), ("regimes", regimes), ("monitor", monitor), ("swing_book", swing_book),
+                     ("briefing", briefing)]:
         step(name, fn)
     # A partial run (e.g. --steps briefing) updates the day's status instead of replacing it.
     prev = json.loads((out / "status.json").read_text()) if (out / "status.json").exists() else {}

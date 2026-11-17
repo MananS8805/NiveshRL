@@ -1389,6 +1389,18 @@ E("copilot", "Algo trader: copilot", "Desk",
   related=["copilot_card", "copilot_review", "copilot_scorecard", "copilot_rules"],
   aliases=["Copilot pool", "Copilot today", "Copilot setups today", "Copilot forward trades", "Copilot backtest verdict",
            "Copilot run mode", "Copilot model skill"])
+E("swing_book", "Swing book (auto paper portfolio)", "Desk",
+  "The swing plan traded automatically on paper: each evening's 'watch for strength' picks are bought at the next "
+  "open with the plan's stop and size, a third is sold at T1 with the stop moved to entry, the rest trails 3 × ATR "
+  "under the highest close, and anything left after 60 trading days is sold at the close.",
+  how="₹1 lakh start, 1% risk per trade (halved below NIFTY's 200-day average or on narrow breadth), at most 20% of "
+      "equity per stock and 10 positions, cash only (delivery), real delivery charges on every buy and sale. A pick "
+      "that does not fit (no slot, not enough cash for at least half its size) is skipped and logged. The daily "
+      "refresh after the close runs it, so it needs no market-hours process.",
+  reading="P&L on an open position includes the part already booked at T1 and the charges paid so far.",
+  caveat="Backtest 2017-2026: about +2% a year vs about +11% for holding NIFTY 50. Its picks beat random picks per "
+         "trade, but sized as a real portfolio it does not beat the index. Paper only.",
+  related=["algo_book"], aliases=["Swing book", "Open positions and tomorrow's queued buys", "Closed trades (newest first)"])
 E("algo_book", "50-trade book (Algo trader)", "Desk",
   "A high-turnover paper book. Every day it trades one rule from a tournament of 93 simple intraday rules on the 150 "
   "most liquid NSE stocks (cross-sectional momentum and reversal, VWAP stretch fades, high-volume breakouts), chosen "

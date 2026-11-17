@@ -185,8 +185,13 @@ the repo, so the research remains reproducible): the Rankers and Backtest lab sc
 plain momentum on point-in-time members: long-short spread t 1.6), RL & plan (the PPO allocator's Sharpe 0.64 is level
 with equal weight's 0.63 and below minimum variance's 0.85), Models, the v1 Intraday agent screen (replay −₹261/day), the stacked
 next-day "Pattern changes" tab (about 52% accuracy, but negative after costs as a daily trade) and the live v2 deep-
-learning engine (`engine: v1` in configs/intraday.yaml). Today now opens on the **swing plan**, the one edge that holds
-up: +0.16R per trade after costs over 3,451 point-in-time trades 2017-2026 (t 4.1) vs +0.08R for random picks.
+learning engine (`engine: v1` in configs/intraday.yaml). Today now opens on the **swing plan**: its picks beat random
+picks per trade (+0.16R after costs over 3,451 point-in-time trades 2017-2026, t 4.1, vs +0.08R). But traded
+automatically as a ₹1 lakh paper portfolio (the **Swing book**, [swing_book.py](src/niveshrl/research/swing_book.py),
+run by the daily pipeline) it made +2.2% a year 2017-2026 vs +10.9% for holding NIFTY 50, and +6.1% with idle cash in
+the index ([swing_book_benchmark.md](report/results/swing_book_benchmark.md)): capital limits make it take whichever
+picks arrive when a slot frees (+0.08R), a quarter of the money sits idle, and 1% risk on +0.08R a trade compounds
+slowly. No part of this project beats buying and holding the index after costs.
 
 ## Desktop app (Windows)
 

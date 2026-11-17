@@ -119,10 +119,64 @@ class TodayPanel(Panel):
         self.tabs.addTab(habw, "Market habits")
         # the "Pattern changes" tab (stacked next-day direction model) was removed: right more often than not, but
         # negative after costs as a daily trade (report/results/nextday_summary_pit.csv)
-        self.tabs.tabBar().moveTab(1, 0)          # the swing list with plans (the measured edge) opens first
+        self.tabs.tabBar().moveTab(1, 0)          # the swing list with plans opens first
+        # --- the swing plan as an automatic paper portfolio (research/swing_book.py, run by the daily pipeline)
+        bw = QWidget()
+        bl = vbox(bw)
+        self.book_head = QTextBrowser()
+        self.book_head.setMaximumHeight(170)
+        bl.addWidget(self.book_head)
+        bl.addWidget(h2("Open positions and tomorrow's queued buys", "swing_book"))
+        self.book_pos = FrameTable(fmt={"entry": "₹{:,.2f}", "stop": "₹{:,.2f}", "T1": "₹{:,.2f}", "last": "₹{:,.2f}",
+                                        "P&L": "₹{:+,.0f}", "qty": "{:,.0f}"}, signed={"P&L"})
+        bl.addWidget(self.book_pos, 1)
+        bl.addWidget(h2("Closed trades (newest first)", "swing_book"))
+        self.book_closed = FrameTable(fmt={"entry": "₹{:,.2f}", "exit": "₹{:,.2f}", "net": "₹{:+,.0f}", "r": "{:+.2f}",
+                                           "qty": "{:,.0f}"}, signed={"net", "r"})
+        bl.addWidget(self.book_closed, 1)
+        self.tabs.insertTab(1, bw, "Swing book (auto paper)")
         self.tabs.setCurrentIndex(0)
 
+    def _swing_book(self) -> None:
+        import json
+        from ...config import ROOT
+        from ...research.swing_book import BOOK_DIR, SwingBook
+        b = SwingBook.load()
+        st = b.s
+        bench_f = ROOT / "report" / "results" / "swing_book_benchmark.json"
+        bench = json.loads(bench_f.read_text(encoding="utf-8")) if bench_f.exists() else {}
+        eq = st["equity"][-1]["equity"] if st["equity"] else st["capital"]
+        col = theme.GREEN if eq >= st["capital"] else theme.RED
+        parts = [f"<h3>Swing book: <span style='color:{col}'>₹{eq:,.0f}</span> (started ₹{st['capital']:,.0f}) · "
+                 f"{len(st['positions'])} open · {len(st['pending'])} queued for the next open · "
+                 f"{len(st['trades'])} closed</h3>"
+                 "<p>Buys each evening's 'watch for strength' picks at the next open with the plan's stop and size "
+                 "(1% risk, at most 20% per stock, 10 positions, cash only), books a third at T1, trails the rest. "
+                 "Updated by the daily refresh after the close. Paper only.</p>"]
+        bk = bench.get("book")
+        if bk:
+            parts.append(f"<p style='color:{theme.AMBER}'><b>Backtest 2017-2026 (₹1 lakh):</b> {bk['cagr']:+.1%} a year "
+                         f"vs NIFTY buy-and-hold {bk['bench_cagr']:+.1%}; max drawdown {bk['max_dd']:.0%}. The picks beat "
+                         "random picks per trade but the portfolio does not beat holding the index. "
+                         "Report: report/results/swing_book_benchmark.md</p>")
+        self.book_head.setHtml("".join(parts))
+        rows = [{"status": "open", "ticker": t.replace(".NS", ""), "entry": v["entry"], "stop": v["stop"], "T1": v["t1"],
+                 "last": v["last"], "qty": v["qty"], "P&L": (v["last"] - v["entry"]) * v["qty"] + v["realized"],
+                 "since": v["entry_date"]} for t, v in st["positions"].items()]
+        rows += [{"status": "buy at next open", "ticker": q["ticker"].replace(".NS", ""), "since": q["signal_date"]}
+                 for q in st["pending"]]
+        self.book_pos.set_frame(pd.DataFrame(rows))
+        tr = pd.DataFrame(st["trades"][::-1])
+        if len(tr):
+            tr["ticker"] = tr["ticker"].str.replace(".NS", "", regex=False)
+            tr = tr[["ticker", "entry_date", "exit_date", "entry", "exit", "qty", "net", "r", "reason"]]
+        self.book_closed.set_frame(tr)
+
     def refresh(self) -> None:
+        try:
+            self._swing_book()
+        except Exception:                                   # noqa: BLE001 - a missing book must not blank the screen
+            pass
         b, mon, hab = data.dload("briefing"), data.dload("monitor"), data.dload("habits")
         if b is None:
             self.story.setHtml("<p>No daily data yet. Press <b>F5</b> (or the tray menu → Refresh) to run the daily "
@@ -166,12 +220,13 @@ class TodayPanel(Panel):
         ytd = data.dload("nextday_ytd") or {}
         e = ytd.get("ensemble") or ytd.get("lgbm") or {}
         sw = data.swing_record()
-        rec = (f"Traded as swing plans (stop under the 10-day low, T1 at 1.5R, trail), these picks made "
-               f"<b>{sw['all']:+.2f}R per trade after costs</b> over {sw['n']:,} point-in-time trades 2017-2026 "
-               f"(t {sw['t']:.1f}) vs {sw['rand']:+.2f}R for random picks. " if sw else "")
+        rec = (f"Traded as swing plans these picks made {sw['all']:+.2f}R per trade after costs over {sw['n']:,} "
+               f"point-in-time trades 2017-2026 vs {sw['rand']:+.2f}R for random picks: better picks than chance. "
+               if sw else "")
         self.warn.setHtml(
-            f"<span style='color:{theme.GREEN}'>The project's one measured edge.</span> {rec}"
-            f"As a one-day trade the same list does not pay its costs, so hold to the plan, not to tomorrow's close. "
+            f"<span style='color:{theme.AMBER}'>For watching, not blind buying.</span> {rec}"
+            "But as a ₹1 lakh portfolio with these plans the list made about 2% a year vs 11% for simply holding "
+            "NIFTY (see the Swing book tab). "
             f"Next-day model this year: AUC {e.get('AUC', float('nan')):.3f}, top-10 hit rate "
             f"{e.get('Top10 hit rate', float('nan')):.0%}.")
         if mon is not None:
