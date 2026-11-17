@@ -245,7 +245,8 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
         at the last month-end whose following month had finished."""
         from .volatility import update_live
         v = update_live(p)
-        return f"vol forecast for {len(v)} stocks, median {float(v['lstm'].median()):.1%}"
+        col = "har" if "har" in v and v["har"].notna().any() else "lstm"
+        return f"vol forecast for {len(v)} stocks, median {float(v[col].median()):.1%} ({col.upper()})"
 
     def regimes():
         """Re-label this year's weeks with a model trained on the window chosen by scripts/compare_freshness.py."""

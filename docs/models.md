@@ -11,7 +11,8 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 | Next-day sequence net | Deep learning | research | Same next-day job from the shape of the last 20 days. | AUC 0.527 · IC mean +0.050 · IC t-stat 20.47 |
 | Stacked next-day model (4 models) | Machine learning | live | One P(up) per stock each evening from LightGBM, the sequence net, logistic regression and the range model, plus pattern changes (Up/Down × quiet/volatile). | AUC 0.520 · IC mean +0.035 · IC t-stat 5.78 |
 | Next-day range model | Machine learning | live | How big tomorrow's high-low range will be (who will move, not which way). | IC mean +0.508 · IC t-stat 284 · Top 20 next-day range 0.048 |
-| Volatility forecaster (LSTM) | Deep learning | live | Next month's volatility per stock (risk sizing, the volatility cone). | RMSE log-vol +0.337 · QLIKE 0.277 · Corr +0.553 |
+| Volatility forecaster (LSTM) | Deep learning | research | Next month's volatility per stock (risk sizing, the volatility cone). | RMSE log-vol +0.337 · QLIKE 0.277 · Corr +0.553 |
+| Volatility forecaster (HAR) | Statistical | live | Next month's volatility per stock: drives the volatility cone and risk views. | RMSE log-vol +0.337 · QLIKE 0.284 · Corr +0.556 |
 | GARCH(1,1) | Statistical | research | The textbook volatility benchmark the LSTM must beat. | RMSE log-vol +0.400 · QLIKE 0.346 · Corr +0.469 |
 | Market regimes (autoencoder + k-means) | Deep learning | live | Label each week Bull / Neutral / Stress (risk state, briefing). | weeks 49.000 · next-month NIFTY vol 0.206 |
 | News sentiment (FinBERT) | NLP | live | Tone of the last 48 h of headlines per stock. | no out-of-sample record (see limits) |
@@ -106,9 +107,19 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Why this architecture:** Volatility has long memory and asymmetric reactions; an LSTM learns that from data across all stocks at once, where GARCH fits each stock alone with a fixed form.
 - **Inputs:** 60 daily returns and absolute returns, 21/63-day realised vol, VIX, NIFTY 20-day vol.
 - **Training:** Rolling 8 years, refit monthly (measured slightly better than yearly), forecast daily.
-- **Where it shows:** Stock page Risk tab (cone), Risk screen
-- **Limits:** Underreacts to sudden shocks.
+- **Where it shows:** Stock page Risk tab (shown beside HAR), Risk screen
+- **Limits:** Beats GARCH by 16%, but ties the linear HAR baseline (RMSE 0.337 vs 0.337, Diebold-Mariano p = 0.74), so HAR now drives the cone; underreacts to sudden shocks.
 - **Measured:** RMSE log-vol +0.337 · QLIKE 0.277 · Corr +0.553
+
+### Volatility forecaster (HAR)
+- **Job:** Next month's volatility per stock: drives the volatility cone and risk views.
+- **Architecture:** Pooled log-HAR: next-month log vol on log realised vol over 5, 21 and 63 days (OLS).
+- **Why this architecture:** The volatility literature's hard baseline (Corsi 2009): long memory captured by three horizons, no training loop, no PyTorch. It tied the LSTM out of sample, so the simpler model wins.
+- **Inputs:** Daily returns (5/21/63-day realised volatility).
+- **Training:** Rolling 8 years, refit yearly, one-month purge.
+- **Where it shows:** Stock page Risk tab (cone), Today's pipeline
+- **Limits:** Linear in logs; no VIX or market inputs.
+- **Measured:** RMSE log-vol +0.337 · QLIKE 0.284 · Corr +0.556
 
 ### GARCH(1,1)
 - **Job:** The textbook volatility benchmark the LSTM must beat.

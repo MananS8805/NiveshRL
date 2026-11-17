@@ -712,7 +712,8 @@ class StockPanel(Panel):
         vf = data.vol_forecasts()
         if vf is not None and t in vf.index.get_level_values(1):
             v = vf.xs(t, level=1).iloc[-1]
-            html += f"<p>Next-month volatility forecast: LSTM {v['lstm']:.1%} · GARCH {v['garch']:.1%}</p>"
+            har = f"HAR {v['har']:.1%} · " if "har" in v and v["har"] == v["har"] else ""
+            html += f"<p>Next-month volatility forecast: {har}LSTM {v['lstm']:.1%} · GARCH {v['garch']:.1%}</p>"
         html += f"<p style='color:{theme.MUTED}'>Walk-forward research output. Not a recommendation.</p>"
         self.models.setHtml(html)
 

@@ -211,6 +211,44 @@ def lstm_forecast(frame: pd.DataFrame, seq: np.ndarray, first_year: int, window_
     return out
 
 
+def har_forecast(p: Panel, frame: pd.DataFrame, first_year: int, window_years: int = 8) -> pd.Series:
+    """Pooled HAR on realised volatility (Corsi 2009 structure): log rv_next = b0 + b1 log rv5 + b2 log rv21 +
+    b3 log rv63, fit by OLS once a year on the ``window_years`` before the test year, purging the last month so no
+    training label overlaps the test year. The linear baseline the volatility literature says ML must beat."""
+    rv5 = (p.returns().rolling(5, min_periods=4).std() * ANN).stack().reindex(frame.index)
+    X = np.column_stack([np.ones(len(frame)), np.log(rv5.clip(lower=1e-4)), np.log(frame["rv21"].clip(lower=1e-4)),
+                         np.log(frame["rv63"].clip(lower=1e-4))])
+    y = np.log(frame["rv_next"].clip(lower=1e-4)).to_numpy()
+    dates = frame.index.get_level_values(0)
+    out = pd.Series(np.nan, index=frame.index)
+    ok = np.isfinite(X).all(1)
+    for year in sorted({d.year for d in dates if d.year >= first_year}):
+        start = pd.Timestamp(year=year, month=1, day=1)
+        tr = ok & np.isfinite(y) & (dates >= start - pd.DateOffset(years=window_years)) & (dates < start - pd.Timedelta(days=31))
+        te = ok & (dates.year == year)
+        if tr.sum() < 200 or not te.any():
+            continue
+        beta, *_ = np.linalg.lstsq(X[tr], y[tr], rcond=None)
+        out[te] = np.exp(X[te] @ beta)
+    return out
+
+
+def dm_test(loss_a: pd.Series, loss_b: pd.Series, lags: int = 1) -> dict:
+    """Diebold-Mariano on per-date mean loss differentials (a - b), Newey-West variance. Negative t: a is better.
+    Averaging across stocks first respects that forecasts on one date share a market shock."""
+    d = (loss_a - loss_b).groupby(level=0).mean().dropna().to_numpy()
+    n = len(d)
+    if n < 10:
+        return {"t": float("nan"), "p": float("nan"), "n_dates": n}
+    u = d - d.mean()
+    var = (u @ u) / n
+    for k in range(1, lags + 1):
+        var += 2 * (1 - k / (lags + 1)) * (u[k:] @ u[:-k]) / n
+    t = d.mean() / np.sqrt(var / n)
+    from scipy.stats import norm
+    return {"t": float(t), "p": float(2 * norm.sf(abs(t))), "n_dates": n, "mean_diff": float(d.mean())}
+
+
 def vol_metrics(pred: pd.Series, realised: pd.Series) -> dict:
     d = pd.concat([pred.rename("f"), realised.rename("r")], axis=1).dropna()
     d = d[(d.f > 0) & (d.r > 0)]
@@ -290,9 +328,11 @@ def update_live(p: Panel, window_years: int = 8, seed: int = 0) -> pd.DataFrame:
     new["hist"] = new["rv21"]
     new["ewma"] = ewma_forecast(p, new).to_numpy()
     new["lstm"] = pred
+    new["har"] = har_forecast(p, frame, first_year=int(today.year))[te].to_numpy()   # the baseline the LSTM must beat
     old = load_vol()
     if old is not None:
         old = old[~old.index.get_level_values(0).isin(new.index.get_level_values(0).unique())]
-        new = pd.concat([old, new.reindex(columns=old.columns)]).sort_index()
+        cols = list(dict.fromkeys(list(old.columns) + list(new.columns)))
+        new = pd.concat([old.reindex(columns=cols), new.reindex(columns=cols)]).sort_index()
     save_vol(new)
     return new.xs(today, level=0)

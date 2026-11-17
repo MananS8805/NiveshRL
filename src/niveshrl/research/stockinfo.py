@@ -248,12 +248,15 @@ def why_moving(ticker: str, table: pd.DataFrame | None, p: Panel, news: pd.DataF
 
 def cone_sigma(ticker: str, vol_forecasts: pd.DataFrame | None, table: pd.DataFrame | None,
                asof: pd.Timestamp, max_age_days: int = 45) -> tuple[float, str]:
-    """Annualised σ for the cone: the vol LSTM's forecast if it is recent, else 60-day realised volatility."""
+    """Annualised σ for the cone: the HAR forecast if it is recent (it matched the LSTM out of sample, p = 0.74, and is
+    simpler), else the vol LSTM's, else 60-day realised volatility."""
     if vol_forecasts is not None and ticker in vol_forecasts.index.get_level_values(1):
         v = vol_forecasts.xs(ticker, level=1)
         d = v.index[-1]
-        if (asof - pd.Timestamp(d)).days <= max_age_days and np.isfinite(v["lstm"].iloc[-1]):
-            return float(v["lstm"].iloc[-1]), f"vol LSTM forecast as of {pd.Timestamp(d):%d %b %Y}"
+        if (asof - pd.Timestamp(d)).days <= max_age_days:
+            for col, name in (("har", "HAR"), ("lstm", "vol LSTM")):
+                if col in v and np.isfinite(v[col].iloc[-1]):
+                    return float(v[col].iloc[-1]), f"{name} forecast as of {pd.Timestamp(d):%d %b %Y}"
     if table is not None and ticker in table.index and np.isfinite(table.loc[ticker, "vol_60d"]):
         return float(table.loc[ticker, "vol_60d"]), "60-day realised volatility"
     return float("nan"), "no volatility estimate"
