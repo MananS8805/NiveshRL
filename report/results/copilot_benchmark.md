@@ -1,6 +1,6 @@
 # Intraday copilot: money-readiness benchmark
 
-Generated 2026-11-17 11:18. 81 trading days of 5-minute bars; the first days train the model (walk-forward), leaving **66 evaluation days** (design 2026-08-11 to 2026-09-25, untouched holdout 2026-09-28 to 2026-11-16). 2,290 cards (every signal, taken or not). Universe: the 150 most-traded stocks by trailing turnover (point in time). ₹1,00,000 pool, 1% risk per trade, ≤ 3 trades a day, NSE intraday costs + 0.03% slippage per side.
+Generated 2026-11-17 13:28. 81 trading days of 5-minute bars; the first days train the model (walk-forward), leaving **66 evaluation days** (design 2026-08-11 to 2026-09-25, untouched holdout 2026-09-28 to 2026-11-16). 2,290 cards (every signal, taken or not). Universe: the 150 most-traded stocks by trailing turnover (point in time). ₹1,00,000 pool, 1% risk per trade, ≤ 3 trades a day, NSE intraday costs + 0.03% slippage per side.
 
 ## The live policy (adaptive rules, 2R exits)
 

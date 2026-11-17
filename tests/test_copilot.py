@@ -89,6 +89,15 @@ def test_choose_day_caps_trades_and_stocks():
     assert not ok and "benched" in why
 
 
+def test_unfilled_trade_does_not_use_a_daily_slot():
+    g = config()["guardrails"]
+    rules = {"setups": {s: {"enabled": True, "min_p": 0.0} for s in CS.SETUPS}, "last_entry": "14:30"}
+    cards = pd.DataFrame([{"ticker": t, "setup": "rs_breakout", "side": "long", "bar": b, "minute": 60 + 5 * b, "p": 0.5,
+                           "r": 0.5, "exit_bar": -1 if t == "A" else b + 3} for b, t in enumerate("ABCD")])
+    taken = choose_day(cards, rules, g)
+    assert cards.loc[taken, "ticker"].tolist() == ["B", "C", "D"]      # A never filled, so D still gets a slot
+
+
 def test_bootstrap_and_deflated_sharpe():
     rng = np.random.default_rng(0)
     x = rng.normal(100, 500, 120)

@@ -100,6 +100,8 @@ def choose_day(cards: pd.DataFrame, rules: dict, g: dict, rcol: str = "r", exit_
         if closed and sum(x for x in closed if x == x) <= stop_r:
             break
         ok, _ = passes(c, rules)
+        if ok and exit_col in c and c[exit_col] < 0:       # never filled (opened beyond its stop): no slot used,
+            continue                                       # same as a blocked entry live
         if ok:
             taken.append(i)
             tickers.add(c["ticker"])
@@ -156,7 +158,7 @@ class Copilot:
         rows = cards.sort_values(["bar", "p"], ascending=[True, False]).iterrows() if len(cards) else iter(())
         for _, c in rows:                                  # an hour with no setups yet is normal, not an error
             if c["key"] in frozen:
-                taken += frozen[c["key"]]["take"]
+                taken += frozen[c["key"]]["take"] and not frozen[c["key"]].get("blocked")
                 continue
             ok, why = passes(c, self.rules)
             if ok and taken >= self.g["max_trades_per_day"]:
@@ -179,6 +181,11 @@ class Copilot:
             return "TAKE", p, (r.why if r is not None else "")
         acct = sim.Account(self.cfg, float(self.state["pool"]))
         trades, log = acct.run_day(sigs, bars, decide, close_at_end=close_at_end)
+        for e in log:                                      # an approved trade that could not be entered frees its slot
+            if e.get("event") == "blocked":
+                k = f"{e['ticker']}|{e['ts']}|{e['setup']}|{e['side']}"
+                if k in frozen and not frozen[k].get("blocked"):
+                    frozen[k]["blocked"] = e.get("detail", "blocked")
         return cards, trades, log, acct
 
     def top_cards(self, cards: pd.DataFrame, k: int = 3, recent_bars: int = 6) -> pd.DataFrame:
