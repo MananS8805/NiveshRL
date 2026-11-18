@@ -4,18 +4,18 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 
 | Model | Family | Status | Job | Measured record |
 | --- | --- | --- | --- | --- |
-| FFNN ranker (Takeuchi & Lee) | Deep learning | live | Rank all NIFTY 200 stocks by the chance of beating the median over the next month. | IC mean +0.043 · IC t-stat 3.78 · Spread / mo +0.007 |
-| LSTM ranker | Deep learning | live | Same monthly ranking job, from the sequence of the last 60 daily returns. | IC mean +0.036 · IC t-stat 3.57 · Spread / mo +0.006 |
-| Transformer ranker | Deep learning | live | Same monthly ranking job with attention across time. | IC mean +0.043 · IC t-stat 3.74 · Spread / mo +0.006 |
+| FFNN ranker (Takeuchi & Lee) | Deep learning | research | Rank all NIFTY 200 stocks by the chance of beating the median over the next month. | IC mean +0.043 · IC t-stat 3.78 · Spread / mo +0.007 |
+| LSTM ranker | Deep learning | research | Same monthly ranking job, from the sequence of the last 60 daily returns. | IC mean +0.036 · IC t-stat 3.57 · Spread / mo +0.006 |
+| Transformer ranker | Deep learning | research | Same monthly ranking job with attention across time. | IC mean +0.043 · IC t-stat 3.74 · Spread / mo +0.006 |
 | Next-day model (LightGBM) | Machine learning | live | P(each stock beats tomorrow's median return): what to watch tomorrow. | AUC 0.530 · IC mean +0.058 · IC t-stat 24.78 · Top10 net of costs / day -0.001 |
 | Next-day sequence net | Deep learning | research | Same next-day job from the shape of the last 20 days. | AUC 0.527 · IC mean +0.050 · IC t-stat 20.47 |
-| Stacked next-day model (4 models) | Machine learning | live | One P(up) per stock each evening from LightGBM, the sequence net, logistic regression and the range model, plus pattern changes (Up/Down × quiet/volatile). | AUC 0.520 · IC mean +0.035 · IC t-stat 5.78 |
+| Stacked next-day model (4 models) | Machine learning | research | One P(up) per stock each evening from LightGBM, the sequence net, logistic regression and the range model, plus pattern changes (Up/Down × quiet/volatile). | AUC 0.520 · IC mean +0.035 · IC t-stat 5.78 |
 | Next-day range model | Machine learning | live | How big tomorrow's high-low range will be (who will move, not which way). | IC mean +0.508 · IC t-stat 284 · Top 20 next-day range 0.048 |
 | Volatility forecaster (LSTM) | Deep learning | research | Next month's volatility per stock (risk sizing, the volatility cone). | RMSE log-vol +0.337 · QLIKE 0.277 · Corr +0.553 |
 | Volatility forecaster (HAR) | Statistical | live | Next month's volatility per stock: drives the volatility cone and risk views. | RMSE log-vol +0.337 · QLIKE 0.284 · Corr +0.556 |
 | GARCH(1,1) | Statistical | research | The textbook volatility benchmark the LSTM must beat. | RMSE log-vol +0.400 · QLIKE 0.346 · Corr +0.469 |
-| Market regimes (autoencoder + k-means) | Deep learning | live | Label each week Bull / Neutral / Stress (risk state, briefing). | weeks 49.000 · next-month NIFTY vol 0.206 |
-| News sentiment (FinBERT) | NLP | live | Tone of the last 48 h of headlines per stock. | no out-of-sample record (see limits) |
+| Market regimes (autoencoder + k-means, NumPy, 5-seed vote) | Deep learning | live | Label each week Bull / Neutral / Stress (risk state, briefing). | weeks 49.000 · next-month NIFTY vol 0.206 |
+| News sentiment (FinBERT) | NLP | rejected | Tone of the last 48 h of headlines per stock. | no out-of-sample record (see limits) |
 | RL allocator (PPO) | Reinforcement learning | research | How a given investor should split money across 29 NIFTY 50 stocks and cash, weekly. | CAGR +0.188 · Sharpe 0.638 · MaxDD -0.331 |
 | Intraday bandit (tabular) | Reinforcement learning | live | TAKE / HALF / SKIP each rule signal by its context's track record. | trades 154 · avg R -0.123 · net ₹ -10,847 |
 | Intraday ML scorer (LightGBM) | Machine learning | live | P(a rule signal ends in profit after costs). | trades 154 · avg R -0.123 · net ₹ -10,847 |
@@ -37,7 +37,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Why this architecture:** Monthly cross-sectional ranking from 33 return features is a tabular problem with weak, nonlinear signal; a small bottlenecked MLP captures interactions without the data a sequence model needs. It is the classic deep-learning momentum paper's design, so it doubles as a reproducible baseline.
 - **Inputs:** 12 monthly + 20 daily cumulative returns, January flag (cross-sectionally ranked).
 - **Training:** Walk-forward, rolling 8-year window, refit yearly (by hand).
-- **Where it shows:** Rankers, Backtest lab, stock page models tab
+- **Where it shows:** Stock page models tab (stored predictions)
 - **Limits:** IC is real but monthly turnover costs eat it: after costs it does not beat equal weight on point-in-time data.
 - **Measured:** IC mean +0.043 · IC t-stat 3.78 · Spread / mo +0.007
 
@@ -66,7 +66,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Architecture:** Gradient-boosted trees (600 trees, early stopping), isotonic calibration.
 - **Why this architecture:** ~40 engineered daily features with interactions and outliers: boosted trees are the strongest, fastest learner for tabular data of this size and are robust to feature scaling.
 - **Inputs:** Returns, gaps, ranges, RSI, volume, VIX, breadth, day of week (cross-sectionally ranked).
-- **Training:** Walk-forward, train Y-5..Y-2, calibrate Y-1, refit yearly (monthly refit measured worse: kept yearly).
+- **Training:** Monthly refit on the last 4 years (refit_comparison.md); P(up) in the app is this model alone since 18 Nov 2026 (it measured better than the ensemble with the sequence net).
 - **Where it shows:** Today (watch tomorrow, P(up)), screener, stock page
 - **Limits:** Top-10 picks lose after costs; use for watching, not trading.
 - **Measured:** AUC 0.530 · IC mean +0.058 · IC t-stat 24.78 · Top10 net of costs / day -0.001
@@ -77,8 +77,8 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Why this architecture:** Tests whether multi-day *patterns* (not just today's numbers) add to the tabular model; convolution finds local shapes, attention relates them.
 - **Inputs:** 20 days × 8 daily features + the tabular row.
 - **Training:** Walk-forward yearly; in the stack refit quarterly (slow on CPU).
-- **Where it shows:** Stacked model
-- **Limits:** Weaker than LightGBM alone (IC 0.050 vs 0.058); ~30 min per fit on this CPU.
+- **Where it shows:** None (removed from the pipeline on 18 Nov 2026)
+- **Limits:** Weaker than LightGBM alone (IC 0.050 vs 0.058; monthly 0.019 vs 0.037); ~30 min per fit on this CPU.
 - **Measured:** AUC 0.527 · IC mean +0.050 · IC t-stat 20.47
 
 ### Stacked next-day model (4 models)
@@ -87,7 +87,7 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Why this architecture:** Stacking lets models that see different things vote with learned weights; training the meta-model only on out-of-sample predictions prevents it trusting a base model's in-sample overconfidence.
 - **Inputs:** The four base models' predictions.
 - **Training:** Base models monthly (sequence net quarterly); meta model monthly.
-- **Where it shows:** Today → Pattern changes
+- **Where it shows:** None (the Pattern changes tab was removed on 18 Nov 2026)
 - **Limits:** Measured: no edge over LightGBM alone (IC 0.035 vs 0.042).
 - **Measured:** AUC 0.520 · IC mean +0.035 · IC t-stat 5.78
 
@@ -131,9 +131,9 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Limits:** Worse than the LSTM and even EWMA here.
 - **Measured:** RMSE log-vol +0.400 · QLIKE 0.346 · Corr +0.469
 
-### Market regimes (autoencoder + k-means)
+### Market regimes (autoencoder + k-means, NumPy, 5-seed vote)
 - **Job:** Label each week Bull / Neutral / Stress (risk state, briefing).
-- **Architecture:** Autoencoder compresses 8 market features to 2 numbers; k-means finds 3 clusters, named by their volatility and return.
+- **Architecture:** Autoencoder (8-16-2-16-8, tanh, Adam) compresses 8 market features to 2 numbers; k-means finds 3 clusters, named by their volatility and return. Since 18 Nov 2026 the same network runs in NumPy (no PyTorch) and the label is the majority over 5 seeds: it matches the PyTorch model on 89-90% of weeks, more than PyTorch matches itself across seeds (regime_pca_check.md).
 - **Why this architecture:** Unsupervised: there are no labels for 'regime'. The autoencoder removes redundancy between correlated market measures so clusters are not dominated by one of them.
 - **Inputs:** NIFTY returns and volatility, VIX, breadth, dispersion, drawdown (each relative to its 1-year median).
 - **Training:** Expanding window since 2005, yearly (rolling 8 years measured worse); relabelled weekly by the pipeline.
@@ -147,8 +147,8 @@ Generated from `src/niveshrl/model_registry.py` by `python scripts/models_doc.py
 - **Why this architecture:** A pretrained finance language model understands 'misses estimates' or 'downgrade' without training data of our own; general sentiment models do not.
 - **Inputs:** Google News headlines.
 - **Training:** Pretrained, not retrained.
-- **Where it shows:** News tabs, screener, monitor list
-- **Limits:** Whether tone predicts returns can only be measured forward (no headline history).
+- **Where it shows:** None (removed from the app on 18 Nov 2026)
+- **Limits:** No measured out-of-sample edge, the swing record was measured without it, and it needed ~1.3 GB of model files plus PyTorch.
 - **Measured:** no out-of-sample record (see limits)
 
 ### RL allocator (PPO)

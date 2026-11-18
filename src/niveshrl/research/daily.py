@@ -202,10 +202,12 @@ def run(steps: list[str] | None = None, progress=None, with_seq: bool = False) -
 
     def regimes():
         """Re-label this year's weeks with a model trained on the window chosen by scripts/compare_freshness.py."""
-        from .regime import detect_regimes, load_regimes, save_regimes
+        from .regime import detect_regimes_vote, load_regimes, save_regimes
         w_old = load_regimes()
         win = 8 if fresh_choice().get("regime_rolling_better") else None
-        w_new = detect_regimes(p, first_year=day.year, window_years=win)
+        # the autoencoder in NumPy, majority of 5 seeds (no torch; matches the torch model 89-90% of weeks, more than
+        # the torch model matches itself: report/results/regime_pca_check.md)
+        w_new = detect_regimes_vote(p, first_year=day.year, window_years=win)
         if w_old is not None:
             w_new = pd.concat([w_old[w_old.index.year < day.year], w_new]).sort_index()
         save_regimes(w_new)

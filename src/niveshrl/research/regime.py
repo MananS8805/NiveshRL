@@ -179,6 +179,23 @@ def detect_regimes(p: Panel, first_year: int = 2010, seed: int = 0, window_years
     return pd.concat(out)
 
 
+def detect_regimes_vote(p: Panel, first_year: int = 2010, window_years: int | None = None, seeds=(0, 1, 2, 3, 4),
+                        encoder: str = "ae_numpy") -> pd.DataFrame:
+    """Majority label over several seeds (ties go to Neutral): the NumPy autoencoder varies more from seed to seed
+    than the torch one (Stress weeks 27-76 vs 37-58 over five seeds), and a vote removes that variance. The map
+    coordinates (z1, z2) come from the first seed."""
+    runs = [detect_regimes(p, first_year=first_year, seed=s, window_years=window_years, encoder=encoder) for s in seeds]
+    lab = pd.concat([r["regime"] for r in runs], axis=1)
+
+    def vote(row):
+        c = row.value_counts()
+        top = c[c == c.max()].index
+        return top[0] if len(top) == 1 else "Neutral"
+    out = runs[0].copy()
+    out["regime"] = lab.apply(vote, axis=1)
+    return out
+
+
 def daily_regimes(weekly: pd.DataFrame, index: pd.DatetimeIndex) -> pd.Series:
     """Label known at each trading day: the latest completed week's regime."""
     return weekly["regime"].reindex(index, method="ffill")

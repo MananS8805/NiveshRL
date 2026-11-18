@@ -46,16 +46,16 @@ CARDS: list[ModelCard] = [
               "signal; a small bottlenecked MLP captures interactions without the data a sequence model needs. It is "
               "the classic deep-learning momentum paper's design, so it doubles as a reproducible baseline.",
               "12 monthly + 20 daily cumulative returns, January flag (cross-sectionally ranked).",
-              "Walk-forward, rolling 8-year window, refit yearly (by hand).", "Rankers, Backtest lab, stock page models tab",
+              "Walk-forward, rolling 8-year window, refit yearly (by hand).", "Stock page models tab (stored predictions)",
               "IC is real but monthly turnover costs eat it: after costs it does not beat equal weight on point-in-time data.",
-              "live", _r("rankers_summary_pit.csv", "ffnn", ["IC mean", "IC t-stat", "Spread / mo"]), ["Backtest lab"]),
+              "research", _r("rankers_summary_pit.csv", "ffnn", ["IC mean", "IC t-stat", "Spread / mo"]), ["Backtest lab"]),
     ModelCard("lstm", "LSTM ranker", "Deep learning",
               "Same monthly ranking job, from the sequence of the last 60 daily returns.",
               "1-layer LSTM (hidden 32) over 60 days of returns + static features → probability.",
               "Tests whether the *order* of recent returns (not just their sums) carries information; LSTMs are the "
               "standard recurrent baseline for that question.",
               "60 daily returns per stock + the FFNN's static features.", "Walk-forward, rolling 8 years, yearly refit.",
-              "Rankers", "No better than the FFNN after costs; slower to train.", "live",
+              "Rankers", "No better than the FFNN after costs; slower to train.", "research",
               _r("rankers_summary_pit.csv", "lstm", ["IC mean", "IC t-stat", "Spread / mo"])),
     ModelCard("transformer", "Transformer ranker", "Deep learning",
               "Same monthly ranking job with attention across time.",
@@ -63,7 +63,7 @@ CARDS: list[ModelCard] = [
               "Attention can weight a few important days (earnings gaps, crashes) more than an LSTM's fading memory; "
               "included to measure whether that matters here.",
               "60 daily returns + static features.", "Walk-forward, rolling 8 years, yearly refit.", "Rankers",
-              "Similar IC to the FFNN at ~15× the training time.", "live",
+              "Similar IC to the FFNN at ~15× the training time.", "research",
               _r("rankers_summary_pit.csv", "transformer", ["IC mean", "IC t-stat", "Spread / mo"])),
     ModelCard("nextday_lgbm", "Next-day model (LightGBM)", "Machine learning",
               "P(each stock beats tomorrow's median return): what to watch tomorrow.",
@@ -71,7 +71,8 @@ CARDS: list[ModelCard] = [
               "~40 engineered daily features with interactions and outliers: boosted trees are the strongest, fastest "
               "learner for tabular data of this size and are robust to feature scaling.",
               "Returns, gaps, ranges, RSI, volume, VIX, breadth, day of week (cross-sectionally ranked).",
-              "Walk-forward, train Y-5..Y-2, calibrate Y-1, refit yearly (monthly refit measured worse: kept yearly).",
+              "Monthly refit on the last 4 years (refit_comparison.md); P(up) in the app is this model alone since "
+              "18 Nov 2026 (it measured better than the ensemble with the sequence net).",
               "Today (watch tomorrow, P(up)), screener, stock page", "Top-10 picks lose after costs; use for watching, not trading.",
               "live", _r("nextday_summary_pit.csv", "lgbm", ["AUC", "IC mean", "IC t-stat", "Top10 net of costs / day"])),
     ModelCard("nextday_seq", "Next-day sequence net", "Deep learning",
@@ -80,7 +81,8 @@ CARDS: list[ModelCard] = [
               "Tests whether multi-day *patterns* (not just today's numbers) add to the tabular model; convolution "
               "finds local shapes, attention relates them.",
               "20 days × 8 daily features + the tabular row.", "Walk-forward yearly; in the stack refit quarterly (slow on CPU).",
-              "Stacked model", "Weaker than LightGBM alone (IC 0.050 vs 0.058); ~30 min per fit on this CPU.", "research",
+              "None (removed from the pipeline on 18 Nov 2026)", "Weaker than LightGBM alone (IC 0.050 vs 0.058; "
+              "monthly 0.019 vs 0.037); ~30 min per fit on this CPU.", "research",
               _r("nextday_summary_pit.csv", "seq", ["AUC", "IC mean", "IC t-stat"])),
     ModelCard("stacked", "Stacked next-day model (4 models)", "Machine learning",
               "One P(up) per stock each evening from LightGBM, the sequence net, logistic regression and the range model, "
@@ -89,7 +91,8 @@ CARDS: list[ModelCard] = [
               "Stacking lets models that see different things vote with learned weights; training the meta-model only "
               "on out-of-sample predictions prevents it trusting a base model's in-sample overconfidence.",
               "The four base models' predictions.", "Base models monthly (sequence net quarterly); meta model monthly.",
-              "Today → Pattern changes", "Measured: no edge over LightGBM alone (IC 0.035 vs 0.042).", "live",
+              "None (the Pattern changes tab was removed on 18 Nov 2026)",
+              "Measured: no edge over LightGBM alone (IC 0.035 vs 0.042).", "research",
               _r("refit_comparison.csv", "stacked (4 models)", ["AUC", "IC mean", "IC t-stat"])),
     ModelCard("range", "Next-day range model", "Machine learning",
               "How big tomorrow's high-low range will be (who will move, not which way).",
@@ -124,9 +127,12 @@ CARDS: list[ModelCard] = [
               "The industry-standard volatility model: if the LSTM cannot beat it, the LSTM is not needed.",
               "Daily returns of one stock.", "4-year fits, yearly.", "Risk screen comparison",
               "Worse than the LSTM and even EWMA here.", "research", _r("vol_summary.csv", "garch", ["RMSE log-vol", "QLIKE", "Corr"])),
-    ModelCard("regimes", "Market regimes (autoencoder + k-means)", "Deep learning",
+    ModelCard("regimes", "Market regimes (autoencoder + k-means, NumPy, 5-seed vote)", "Deep learning",
               "Label each week Bull / Neutral / Stress (risk state, briefing).",
-              "Autoencoder compresses 8 market features to 2 numbers; k-means finds 3 clusters, named by their volatility and return.",
+              "Autoencoder (8-16-2-16-8, tanh, Adam) compresses 8 market features to 2 numbers; k-means finds 3 "
+              "clusters, named by their volatility and return. Since 18 Nov 2026 the same network runs in NumPy "
+              "(no PyTorch) and the label is the majority over 5 seeds: it matches the PyTorch model on 89-90% of "
+              "weeks, more than PyTorch matches itself across seeds (regime_pca_check.md).",
               "Unsupervised: there are no labels for 'regime'. The autoencoder removes redundancy between correlated "
               "market measures so clusters are not dominated by one of them.",
               "NIFTY returns and volatility, VIX, breadth, dispersion, drawdown (each relative to its 1-year median).",
@@ -138,8 +144,9 @@ CARDS: list[ModelCard] = [
               "FinBERT (BERT fine-tuned on financial text, ProsusAI/finbert).",
               "A pretrained finance language model understands 'misses estimates' or 'downgrade' without training data "
               "of our own; general sentiment models do not.",
-              "Google News headlines.", "Pretrained, not retrained.", "News tabs, screener, monitor list",
-              "Whether tone predicts returns can only be measured forward (no headline history).", "live"),
+              "Google News headlines.", "Pretrained, not retrained.", "None (removed from the app on 18 Nov 2026)",
+              "No measured out-of-sample edge, the swing record was measured without it, and it needed ~1.3 GB of "
+              "model files plus PyTorch.", "rejected"),
     ModelCard("rl", "RL allocator (PPO)", "Reinforcement learning",
               "How a given investor should split money across 29 NIFTY 50 stocks and cash, weekly.",
               "PPO actor-critic; permutation-equivariant Transformer encoder; Beta (equity share) × Dirichlet (stock mix) policy.",
