@@ -1,4 +1,4 @@
-"""SCRN: technical + fundamental + sentiment + model screener over the NIFTY 200.
+"""SCRN: technical + fundamental + model screener over the NIFTY 200.
 
 Filters run in the C++ core (``niveshrl_core.apply_filters``) on a float column
 matrix built once per daily run, so re-filtering is instant; without the core
@@ -18,7 +18,7 @@ from . import Panel, vbox
 
 OPC = {">": 0, ">=": 1, "<": 2, "<=": 3, "=": 4}
 DEFAULT_COLS = ["close", "ret_1d", "ret_1m", "rsi14", "vs_sma200", "from_52w_high", "vol_ratio", "trailingPE",
-                "returnOnEquity", "analyst_score", "sentiment_adj", "prob_up"]
+                "returnOnEquity", "analyst_score", "prob_up"]
 
 
 class ColumnStore:

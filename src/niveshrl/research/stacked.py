@@ -191,8 +191,11 @@ def load_bundle(month, d=None) -> Bundle | None:
     p = (d or MODEL_DIR) / f"{pd.Timestamp(month):%Y-%m}.pkl"
     if not p.exists():
         return None
-    with open(p, "rb") as f:
-        return pickle.load(f)
+    try:
+        with open(p, "rb") as f:
+            return pickle.load(f)
+    except (ImportError, ModuleNotFoundError):        # a bundle with the torch sequence net, in a build without torch:
+        return None                                  # treat as missing, so the month is refit with the models asked for
 
 
 # --------------------------------------------------------------------------- stacking
@@ -301,7 +304,8 @@ def _bundle_for(dd, m, models, range_xy, prev, seq_every: int = 3) -> Bundle:
     return b
 
 
-def daily_update(p, dd: nd.DayData | None = None, models=("lgbm", "seq", "logreg"), meta_months: int = 12) -> dict:
+def daily_update(p, dd: nd.DayData | None = None, models=("lgbm", "seq", "logreg"), meta_months: int = 12,
+                 stack: bool = True) -> dict:
     """Bring the rolling base predictions and the stack up to the panel's last day.
 
     Refits a month's base models only when that month's bundle is missing (so the pipeline trains once a month, the
@@ -341,6 +345,8 @@ def daily_update(p, dd: nd.DayData | None = None, models=("lgbm", "seq", "logreg
         base.loc[miss, "y"], base.loc[miss, "ret_next"] = yv, rv
     BASE_PATH.parent.mkdir(parents=True, exist_ok=True)
     base.to_parquet(BASE_PATH)
+    if not stack:                                    # the app's pipeline: base models only (no meta model)
+        return {"day": day, "base": base.xs(day, level=0) if day in base.index.get_level_values(0) else pd.DataFrame()}
     # meta model for this month (cached), applied to the days that do not have a stacked value yet
     M = day.to_period("M").to_timestamp()
     mp = MODEL_DIR / f"meta_{M:%Y-%m}.pkl"

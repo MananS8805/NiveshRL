@@ -1,4 +1,4 @@
-"""Stock screener: one table of technical, fundamental, analyst, sentiment and model
+"""Stock screener: one table of technical, fundamental, analyst and model
 columns for the NIFTY 200, plus filters and presets.
 
 Shared by the Streamlit SCRN screen and the desktop app (the C++ core runs the
@@ -38,8 +38,6 @@ PATTERN_COLUMNS = {
 }
 SIGNAL_COLUMNS = {
     "prob_up": ("Next-day P(up)", "Models", "pct"), "monthly_pct": ("Monthly ranker %ile", "Models", "pct"),
-    "sentiment": ("News sentiment", "News", "num"), "sentiment_adj": ("Sentiment (adj.)", "News", "num"),
-    "n_news": ("Headlines (48h)", "News", "num"), "buzz": ("News buzz", "News", "num"),
 }
 COLUMNS = {**TECH_COLUMNS, **FUND_COLUMNS, **PATTERN_COLUMNS, **SIGNAL_COLUMNS}
 
@@ -62,8 +60,6 @@ PRESETS = {
     "High dividend": ("Dividend yield above 2.5% with sustainable payout",
                       [("dividendYield", ">=", 0.025), ("payoutRatio", "<", 0.9)]),
     "Earnings this week": ("Results due within 7 days", [("days_to_earnings", ">=", 0), ("days_to_earnings", "<=", 7)]),
-    "Positive news buzz": ("Clearly positive FinBERT sentiment across several headlines",
-                           [("sentiment_adj", ">=", 0.2), ("n_news", ">=", 3)]),
     "Strong trend": ("Above all moving averages with a strong ADX trend",
                      [("vs_sma50", ">", 0), ("vs_sma200", ">", 0), ("adx14", ">=", 25), ("supertrend", "=", 1)]),
     "Model favourites": ("Highest next-day probability and top-half monthly rank",
@@ -104,9 +100,6 @@ def build_table(folder: Path, monthly: pd.DataFrame | None = None) -> pd.DataFra
     if dv.exists():
         t = t.join(pd.read_parquet(dv)[["deliv_pct", "deliv_avg20", "deliv_up_minus_down", "vol_phase_score", "vol_phase"]],
                    how="left")
-    s = folder / "sentiment.parquet"
-    if s.exists():
-        t = t.join(pd.read_parquet(s)[["sentiment", "sentiment_adj", "n_news", "buzz"]], how="left")
     n = folder / "nextday.parquet"
     if n.exists():
         t["prob_up"] = pd.read_parquet(n)["prob"].reindex(t.index)

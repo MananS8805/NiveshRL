@@ -1,4 +1,4 @@
-"""Model worker: runs the daily pipeline (prices, FinBERT, LightGBM/DL, briefing) in a separate process.
+"""Model worker: runs the daily pipeline (prices, LightGBM, briefing) in a separate process.
 
 A fresh process per run keeps the UI responsive (no GIL contention) and returns
 all model memory (FinBERT is ~1 GB in RAM) to the OS when the run ends, which

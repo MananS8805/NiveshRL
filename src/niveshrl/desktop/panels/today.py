@@ -140,7 +140,7 @@ class TodayPanel(Panel):
     def _swing_book(self) -> None:
         import json
         from ...config import ROOT
-        from ...research.swing_book import BOOK_DIR, SwingBook
+        from ...research.swing_book import SwingBook
         b = SwingBook.load()
         st = b.s
         bench_f = ROOT / "report" / "results" / "swing_book_benchmark.json"
@@ -182,7 +182,6 @@ class TodayPanel(Panel):
             self.story.setHtml("<p>No daily data yet. Press <b>F5</b> (or the tray menu → Refresh) to run the daily "
                                "pipeline, or run <code>python scripts/daily.py</code>.</p>")
             return
-        ms = b.get("market_sentiment", float("nan"))
         self.kpis.set_items([
             ("Trading day", b["date"], theme.AMBER),
             ("NIFTY", f"{b['nifty']:,.1f}", None),
@@ -191,14 +190,13 @@ class TodayPanel(Panel):
             ("VIX", f"{b['vix']:.2f}", theme.signed(-b["vix_1d"]), f"{b['vix_1d']:+.1%} today"),
             ("Adv / Dec", f"{b['advancers']} / {b['decliners']}", None),
             ("Regime", b.get("regime") or "n/a", theme.AMBER),
-            ("News sentiment", f"{ms:+.2f}", theme.signed(ms), "market average, FinBERT"),
         ])
         self.story.setHtml("<ul>" + "".join(f"<li style='margin-bottom:4px'>{x}</li>" for x in b["narrative"]) + "</ul>")
         # watchlist rows
         mine = wl.load()
         t = data.screener_table()
         if mine and t is not None:
-            cols = {"ret_1d": "1D", "prob_up": "P(up)", "sentiment_adj": "Sentiment", "analyst_score": "Analyst"}
+            cols = {"ret_1d": "1D", "prob_up": "P(up)", "analyst_score": "Analyst"}
             rows = t.reindex(list(mine))[[c for c in cols if c in t]].rename(columns=cols)
             rows.insert(0, "Tier", [wl.TIERS[mine[x].tier][0] for x in rows.index])
             self.mine.set_frame(rows)
@@ -218,7 +216,7 @@ class TodayPanel(Panel):
                             else pd.DataFrame({"": ["No results due this week among the NIFTY 200."]}))
         # monitor lists
         ytd = data.dload("nextday_ytd") or {}
-        e = ytd.get("ensemble") or ytd.get("lgbm") or {}
+        e = ytd.get("lgbm") or ytd.get("ensemble") or {}
         sw = data.swing_record()
         rec = (f"Traded as swing plans these picks made {sw['all']:+.2f}R per trade after costs over {sw['n']:,} "
                f"point-in-time trades 2017-2026 vs {sw['rand']:+.2f}R for random picks: better picks than chance. "

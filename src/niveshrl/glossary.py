@@ -525,9 +525,9 @@ E("finbert", "FinBERT sentiment score", "News & analysts",
   bands=[(-0.5, "very negative", "clearly bad news (losses, probes, downgrades)"),
          (-0.2, "negative", ""), (0.2, "neutral", "mostly factual or mixed headlines"),
          (0.5, "positive", ""), (INF, "very positive", "clearly good news (beats, orders, upgrades)")],
-  use="Explains price moves and flags stocks in the news; feeds 15% of the monitor-list score.",
-  caveat="Headline tone, not fundamental truth. Its predictive value is still being measured as news history "
-         "accumulates, so it is an overlay, not part of the backtests.",
+  use="Removed from the app on 18 Nov 2026 (it used to feed 15% of the monitor-list score).",
+  caveat="It never showed a measured out-of-sample edge, the swing record was measured without it, and the model "
+         "needed about 1.3 GB of downloads plus torch. Headlines are still shown, without a tone score.",
   related=["sentiment_adj", "buzz", "n_news"],
   aliases=["News sentiment", "FinBERT sentiment", "NEWS SENTIMENT"])
 E("sentiment_adj", "Sentiment (confidence-adjusted)", "News & analysts",
@@ -539,8 +539,8 @@ E("sentiment_adj", "Sentiment (confidence-adjusted)", "News & analysts",
   related=["finbert", "n_news"], aliases=["Sentiment (adj.)", "Sentiment"])
 E("n_news", "Headlines (48 h)", "News & analysts",
   "Number of relevant Google News headlines about the stock in the last 48 hours (de-duplicated, junk filtered, "
-  "whole-word name match).",
-  related=["buzz", "finbert"], aliases=["Headlines (48h)", "Headlines", "Bullish", "Bearish"])
+  "whole-word name match). Newest: how long ago the latest of them was published.",
+  related=["buzz", "finbert"], aliases=["Headlines (48h)", "Headlines", "Newest", "Bullish", "Bearish"])
 E("buzz", "News buzz", "News & analysts",
   "Today's headline count ÷ the stock's average count over previous daily runs.",
   bands=[(0.7, "quiet", ""), (1.5, "normal", ""), (INF, "buzzing", "much more coverage than usual")],

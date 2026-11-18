@@ -23,11 +23,10 @@ import warnings
 
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
-
 from .data import Panel
-from .rankers import PRED_DIR
+from ..config import ROOT as _ROOT
+
+PRED_DIR = _ROOT / "data" / "predictions"          # same folder as research/rankers.py (no torch import needed)
 
 H = 21        # forecast horizon, trading days
 L = 60        # LSTM lookback, trading days
@@ -133,15 +132,22 @@ def garch_forecast(p: Panel, frame: pd.DataFrame, first_year: int, fit_years: in
     return out
 
 
-class VolLSTM(nn.Module):
-    def __init__(self, hidden: int = 32, n_static: int = 4):
-        super().__init__()
-        self.lstm = nn.LSTM(2, hidden, batch_first=True)
-        self.head = nn.Sequential(nn.Linear(hidden + n_static, 32), nn.ReLU(), nn.Linear(32, 1))
+def VolLSTM(hidden: int = 32, n_static: int = 4):
+    """The research LSTM (torch is imported only here: the app's daily update uses HAR, not this)."""
+    import torch
+    import torch.nn as nn
 
-    def forward(self, seq, static):
-        _, (h, _) = self.lstm(seq)
-        return self.head(torch.cat([h[-1], static], -1)).squeeze(-1)
+    class _VolLSTM(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.lstm = nn.LSTM(2, hidden, batch_first=True)
+            self.head = nn.Sequential(nn.Linear(hidden + n_static, 32), nn.ReLU(), nn.Linear(32, 1))
+
+        def forward(self, seq, static):
+            _, (h, _) = self.lstm(seq)
+            return self.head(torch.cat([h[-1], static], -1)).squeeze(-1)
+
+    return _VolLSTM()
 
 
 def _static(frame: pd.DataFrame) -> np.ndarray:
@@ -168,6 +174,7 @@ def _periods(dates: pd.DatetimeIndex, first_year: int, refit: str, window_years:
 
 def lstm_forecast(frame: pd.DataFrame, seq: np.ndarray, first_year: int, window_years: int = 8,
                   epochs: int = 30, seed: int = 0, verbose: bool = True, refit: str = "yearly") -> pd.Series:
+    import torch
     torch.manual_seed(seed)
     dates = frame.index.get_level_values(0)
     y_all = np.log(frame["rv_next"].to_numpy()).astype(np.float32)
@@ -273,62 +280,19 @@ def load_vol() -> pd.DataFrame | None:
 
 
 def update_live(p: Panel, window_years: int = 8, seed: int = 0) -> pd.DataFrame:
-    """Today's next-month volatility forecast for every stock (run daily by the pipeline).
-
-    The LSTM is refit once a month (cached in data/models/vol_lstm_YYYY-MM.pt) on the window up to the last month
-    whose 21-day outcomes are known, then applied to today's row. Results are merged into vol_forecasts.parquet
-    (replacing any earlier rows for the same dates), with hist and EWMA alongside."""
-    from ..config import ROOT
-    frame, seq = build_vol_data(p, live=True)
+    """Today's next-month volatility forecast for every stock (run daily by the pipeline): HAR (it drives the cone),
+    with historical and EWMA alongside. The LSTM is no longer refit here: against HAR it ties (DM p = 0.74,
+    report/results/vol_har.md), so the app does not carry torch for it; its stored history stays in the file.
+    Results are merged into vol_forecasts.parquet, replacing any earlier rows for the same dates."""
+    frame, _ = build_vol_data(p, live=True)
     dates = frame.index.get_level_values(0)
     today = dates.max()
     M = today.to_period("M").to_timestamp()
-    cache = ROOT / "data" / "models" / f"vol_lstm_{M:%Y-%m}.pt"
-    st_all = _static(frame)
     te = (dates >= M) & (dates <= today)
-    m = VolLSTM()
-    if cache.exists():
-        m.load_state_dict(torch.load(cache))
-    else:
-        torch.manual_seed(seed)
-        y_all = np.log(frame["rv_next"].to_numpy()).astype(np.float32)
-        v_end, v0 = M - pd.DateOffset(months=1), M - pd.DateOffset(months=13)
-        lab = np.isfinite(y_all)
-        tr = (dates >= M - pd.DateOffset(years=window_years)) & (dates < v0) & lab
-        va = (dates >= v0) & (dates < v_end) & lab
-        opt = torch.optim.Adam(m.parameters(), lr=1e-3, weight_decay=1e-5)
-        S, X, Yt = (torch.from_numpy(a) for a in (seq[tr].astype(np.float32), st_all[tr], y_all[tr]))
-        Sv, Xv, Yv = (torch.from_numpy(a) for a in (seq[va].astype(np.float32), st_all[va], y_all[va]))
-        best, state, bad = np.inf, None, 0
-        for _ in range(30):
-            m.train()
-            perm = torch.randperm(len(Yt))
-            for s in range(0, len(Yt), 512):
-                i = perm[s:s + 512]
-                loss = ((m(S[i], X[i]) - Yt[i]) ** 2).mean()
-                opt.zero_grad()
-                loss.backward()
-                opt.step()
-            m.eval()
-            with torch.no_grad():
-                v = ((m(Sv, Xv) - Yv) ** 2).mean().item()
-            if v < best - 1e-5:
-                best, state, bad = v, {k: t.clone() for k, t in m.state_dict().items()}, 0
-            else:
-                bad += 1
-                if bad >= 4:
-                    break
-        m.load_state_dict(state)
-        cache.parent.mkdir(parents=True, exist_ok=True)
-        torch.save(state, cache)
-    m.eval()
-    with torch.no_grad():
-        pred = np.exp(m(torch.from_numpy(seq[te].astype(np.float32)), torch.from_numpy(st_all[te])).numpy())
     new = frame[te].copy()
     new["hist"] = new["rv21"]
     new["ewma"] = ewma_forecast(p, new).to_numpy()
-    new["lstm"] = pred
-    new["har"] = har_forecast(p, frame, first_year=int(today.year))[te].to_numpy()   # the baseline the LSTM must beat
+    new["har"] = har_forecast(p, frame, first_year=int(today.year), window_years=window_years)[te].to_numpy()
     old = load_vol()
     if old is not None:
         old = old[~old.index.get_level_values(0).isin(new.index.get_level_values(0).unique())]

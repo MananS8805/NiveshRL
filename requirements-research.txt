@@ -1,0 +1,11 @@
+# Research, the RL allocator, deep-learning rankers, FinBERT and the Streamlit dashboard (not needed by the app).
+# torch: install the CPU wheel first (see README)
+-r requirements.txt
+gymnasium>=1.0
+stable-baselines3>=2.3
+transformers>=4.40     # FinBERT (research only since 18 Nov 2026; weights ~440 MB, downloaded on first use)
+tensorboard>=2.16
+PyPortfolioOpt>=1.5
+matplotlib>=3.8
+plotly>=5.20
+streamlit>=1.35

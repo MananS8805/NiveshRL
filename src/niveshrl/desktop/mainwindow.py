@@ -5,7 +5,7 @@ Threading model (nothing slow runs on the UI thread):
   * UI thread        painting + cheap overlays of live ticks on precomputed frames
   * feed thread      Yahoo WebSocket -> C++ TickStore + dict (``livefeed.Feed``)
   * Qt thread pool   file loads, Yahoo fundamentals, backtests, RL plan (``widgets.run_async``)
-  * worker process   the daily pipeline: FinBERT, LightGBM/DL, briefing (``worker.PipelineRunner``)
+  * worker process   the daily pipeline: prices, LightGBM, briefing (``worker.PipelineRunner``)
 """
 from __future__ import annotations
 
@@ -576,7 +576,7 @@ class MainWindow(QMainWindow):
             "Explanations: click any label marked ⓘ, a KPI tile or a chart's 'What am I looking at?' button; right-click "
             "a table header or value. Esc closes the Explain panel.\n"
             "Charts: mouse wheel zooms time, drag pans, the range buttons (1M … All) jump, double-click resets.\n"
-            "F5 runs the daily pipeline (prices, fundamentals, news + FinBERT, next-day model, briefing).\n\n"
+            "F5 runs the daily pipeline (prices, fundamentals, news, next-day model, swing book, briefing).\n\n"
             "Educational project, not investment advice. Not registered with SEBI."))
 
     def save_layout(self) -> None:

@@ -1,4 +1,4 @@
-"""Run the daily pipeline (prices, technicals, fundamentals, news, FinBERT sentiment,
+"""Run the daily pipeline (prices, technicals, fundamentals, news headlines,
 next-day model, monitor list, briefing) and write data/daily/<date>/.
 
     python scripts/daily.py                    # everything (~3-6 min; first run also downloads FinBERT)

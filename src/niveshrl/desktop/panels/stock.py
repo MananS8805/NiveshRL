@@ -1,9 +1,8 @@
 """Stock panel: live price, watchlist controls, overview (report card + why it is moving), candlestick chart, key
-stats, peers, seasonality & results reactions, risk (relative strength, volatility cone, drawdowns), news + FinBERT,
+stats, peers, seasonality & results reactions, risk (relative strength, volatility cone, drawdowns), news headlines,
 technicals, financial statements, ownership/analysts, model outputs and company profile."""
 from __future__ import annotations
 
-import numpy as np
 import pandas as pd
 from PySide6.QtCore import Qt, QUrl
 from PySide6.QtGui import QDesktopServices
@@ -107,16 +106,15 @@ class StockPanel(Panel):
         self._build_events()
         self._build_risk()
         self.news = FrameTable(fmt={"Score": "{:+.2f}"}, signed={"Score"})
-        self.news.model_.term_overrides = {"Score": "finbert"}
         self.news.doubleClicked.connect(self._open_news)
         nw = QWidget()
         nl = QVBoxLayout(nw)
-        self.news_head = KpiRow(cols=4)
+        self.news_head = KpiRow(cols=2)
         nl.addWidget(self.news_head)
         nl.addWidget(self.news, 1)
-        nl.addWidget(muted("Scored by FinBERT (ProsusAI/finbert). Headlines from Google News, last 48 h. "
-                           "Double-click a headline to open it in your browser."))
-        self.tabs.addTab(nw, "News && sentiment")
+        nl.addWidget(muted("Headlines from Google News, last 48 h. Double-click a headline to open it in your browser. "
+                           "(The FinBERT tone score was removed on 18 Nov 2026: it never showed a measured edge.)"))
+        self.tabs.addTab(nw, "News")
         self.tech = FrameTable()
         self.tabs.addTab(self.tech, "Technicals")
         self.stmts = {}
@@ -457,18 +455,14 @@ class StockPanel(Panel):
 
     def _desk_row(self) -> None:
         t = self.ticker
-        fund, sent, nxt = data.dload("fundamentals"), data.dload("sentiment"), data.dload("nextday")
+        fund, nxt = data.dload("fundamentals"), data.dload("nextday")
         an = fund.loc[t, "analyst_score"] if fund is not None and t in fund.index and "analyst_score" in fund else None
         ne = pd.to_datetime(fund.loc[t, "next_earnings"], errors="coerce") \
             if fund is not None and t in fund.index and "next_earnings" in fund else None
-        se = sent.loc[t] if sent is not None and t in sent.index else None
         pu = nxt.loc[t, "prob"] if nxt is not None and t in nxt.index else None
         self.desk.set_items([
             ("Analyst score", "–" if an is None or an != an else f"{an:.0f}/100", None, "consensus, upside, revisions"),
             ("Next results", "–" if ne is None or pd.isna(ne) else ne.strftime("%d %b %Y"), None, "Yahoo calendar"),
-            ("News sentiment", "–" if se is None else f"{se['sentiment']:+.2f}",
-             None if se is None else theme.signed(se["sentiment"]),
-             "" if se is None else f"{int(se['n_news'])} headlines · FinBERT"),
             ("Next-day P(up)", "–" if pu is None or pu != pu else f"{pu:.0%}", None, "calibrated model, not advice"),
         ])
 
@@ -532,8 +526,8 @@ class StockPanel(Panel):
 
     def _news(self) -> None:
         news = data.dload("news")
-        if news is None or "score" not in news:
-            self.news.set_frame(pd.DataFrame({"": ["No scored news yet. Run the daily refresh (F5)."]}))
+        if news is None or not len(news):
+            self.news.set_frame(pd.DataFrame({"": ["No news yet. Run the daily refresh (F5)."]}))
             self.news_head.set_items([])
             return
         n = news[news["ticker"] == self.ticker].sort_values("published", ascending=False)
@@ -542,16 +536,11 @@ class StockPanel(Panel):
             self.news_head.set_items([])
             return
         age_h = (pd.Timestamp.now(tz="Asia/Kolkata") - pd.to_datetime(n["published"])).dt.total_seconds() / 3600
-        w = (0.5 ** (age_h / 12)).fillna(0.01)
-        avg = float(np.average(n["score"], weights=w))
         self.news_head.set_items([
-            ("FinBERT sentiment", f"{avg:+.2f}", theme.signed(avg), "recency-weighted, −1…+1"),
             ("Headlines", str(len(n)), None, "last 48 h"),
-            ("Bullish", str(int((n["score"] > 0.5).sum())), theme.GREEN),
-            ("Bearish", str(int((n["score"] < -0.5).sum())), theme.RED),
+            ("Newest", "–" if age_h.isna().all() else f"{age_h.min():.0f} h ago", None, "Google News"),
         ])
         view = pd.DataFrame({"When": pd.to_datetime(n["published"]).dt.strftime("%d %b %H:%M").to_numpy(),
-                             "Label": n["label"].to_numpy(), "Score": n["score"].to_numpy(),
                              "Headline": n["title"].to_numpy(), "Source": n["source"].to_numpy()})
         self._links = list(n["link"])
         self.news.set_frame(view)

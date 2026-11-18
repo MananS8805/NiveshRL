@@ -92,7 +92,7 @@ class AlertsPanel(Panel):
         rrow.addStretch(1)
         lay.addLayout(rrow)
         lay.addWidget(h2("Fired (newest first)", "alerts"))
-        lay.addWidget(muted("Your rules and the watchlist alerts (targets, ±3% days, sentiment flips, results within 7 "
+        lay.addWidget(muted("Your rules and the watchlist alerts (targets, ±3% days, results within 7 "
                             "days, tomorrow's top list). Double-click one to open the stock."))
         self.list = QListWidget()
         self.empty = QListWidgetItem("No alerts yet today.")

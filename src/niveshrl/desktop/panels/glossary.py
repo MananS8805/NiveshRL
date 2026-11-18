@@ -20,7 +20,7 @@ class GlossaryPanel(Panel):
         row = QHBoxLayout()
         left = QVBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search terms: RSI, Sharpe, FinBERT, decile, VIX…")
+        self.search.setPlaceholderText("Search terms: RSI, Sharpe, ATR, decile, VIX…")
         self.search.textChanged.connect(self._fill)
         left.addWidget(self.search)
         self.tree = QTreeWidget()

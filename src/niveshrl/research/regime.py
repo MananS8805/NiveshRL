@@ -1,4 +1,5 @@
-"""Market regime detection: autoencoder embedding + k-means, walk-forward.
+"""Market regime detection: a 2-D embedding (PCA in the app; the original autoencoder for research) + k-means,
+walk-forward.
 
 Every week (Friday close) we describe the market with 8 features: NIFTY
 20-day return, 20- and 60-day volatility, India VIX level and 20-day
@@ -27,11 +28,10 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import torch
-import torch.nn as nn
-
+from ..config import ROOT
 from .data import Panel
-from .rankers import PRED_DIR
+
+PRED_DIR = ROOT / "data" / "predictions"          # same folder as research/rankers.py (no torch import needed)
 
 REGIMES = ["Bull", "Neutral", "Stress"]
 REGIME_COLORS = {"Bull": "#2ecc71", "Neutral": "#f1c40f", "Stress": "#e74c3c"}
@@ -61,18 +61,25 @@ def market_features(p: Panel) -> pd.DataFrame:
     return f.resample("W-FRI").last().dropna()
 
 
-class AE(nn.Module):
-    def __init__(self, n: int = len(FEATS), z: int = 2):
-        super().__init__()
-        self.enc = nn.Sequential(nn.Linear(n, 16), nn.Tanh(), nn.Linear(16, z))
-        self.dec = nn.Sequential(nn.Linear(z, 16), nn.Tanh(), nn.Linear(16, n))
+def AE(n: int = len(FEATS), z: int = 2):
+    """The research autoencoder (torch is imported only here; the app uses ``encoder="pca"``)."""
+    import torch.nn as nn
 
-    def forward(self, x):
-        z = self.enc(x)
-        return self.dec(z), z
+    class _AE(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.enc = nn.Sequential(nn.Linear(n, 16), nn.Tanh(), nn.Linear(16, z))
+            self.dec = nn.Sequential(nn.Linear(z, 16), nn.Tanh(), nn.Linear(16, n))
+
+        def forward(self, x):
+            zz = self.enc(x)
+            return self.dec(zz), zz
+
+    return _AE()
 
 
-def _fit(X: np.ndarray, seed: int = 0, epochs: int = 600) -> AE:
+def _fit(X: np.ndarray, seed: int = 0, epochs: int = 600):
+    import torch
     torch.manual_seed(seed)
     m = AE()
     opt = torch.optim.Adam(m.parameters(), lr=1e-2)
@@ -86,8 +93,69 @@ def _fit(X: np.ndarray, seed: int = 0, epochs: int = 600) -> AE:
     return m.eval()
 
 
-def detect_regimes(p: Panel, first_year: int = 2010, seed: int = 0, window_years: int | None = None) -> pd.DataFrame:
-    """``window_years=None``: expanding window (all history before Y); an int: only the last ``window_years``."""
+class NumpyAE:
+    """The same autoencoder (8 -> 16 -> 2 -> 16 -> 8, tanh, full-batch Adam lr 1e-2, 600 epochs, PyTorch's default
+    uniform init) in plain NumPy, so the app needs no torch. Its labels match the torch version about as well as the
+    torch version matches itself across seeds (report/results/regime_pca_check.md)."""
+
+    def __init__(self, n: int = len(FEATS), z: int = 2, h: int = 16, seed: int = 0):
+        rng = np.random.default_rng(seed)
+        shapes = [(n, h), (h, z), (z, h), (h, n)]
+        self.W = [rng.uniform(-1 / np.sqrt(a), 1 / np.sqrt(a), (a, b)) for a, b in shapes]
+        self.b = [rng.uniform(-1 / np.sqrt(a), 1 / np.sqrt(a), b) for a, b in shapes]
+
+    def encode(self, X: np.ndarray) -> np.ndarray:
+        return np.tanh(X @ self.W[0] + self.b[0]) @ self.W[1] + self.b[1]
+
+    def fit(self, X: np.ndarray, epochs: int = 600, lr: float = 1e-2, b1: float = 0.9, b2: float = 0.999,
+            eps: float = 1e-8) -> "NumpyAE":
+        params = self.W + self.b
+        m = [np.zeros_like(q) for q in params]
+        v = [np.zeros_like(q) for q in params]
+        N = X.size
+        for t in range(1, epochs + 1):
+            a1 = np.tanh(X @ self.W[0] + self.b[0])
+            zz = a1 @ self.W[1] + self.b[1]
+            a3 = np.tanh(zz @ self.W[2] + self.b[2])
+            out = a3 @ self.W[3] + self.b[3]
+            g_out = 2 * (out - X) / N                         # d mean-squared-error
+            gW4, gb4 = a3.T @ g_out, g_out.sum(0)
+            g3 = (g_out @ self.W[3].T) * (1 - a3 ** 2)
+            gW3, gb3 = zz.T @ g3, g3.sum(0)
+            gz = g3 @ self.W[2].T
+            gW2, gb2 = a1.T @ gz, gz.sum(0)
+            g1 = (gz @ self.W[1].T) * (1 - a1 ** 2)
+            gW1, gb1 = X.T @ g1, g1.sum(0)
+            grads = [gW1, gW2, gW3, gW4, gb1, gb2, gb3, gb4]
+            for i, (q, g) in enumerate(zip(params, grads)):
+                m[i] = b1 * m[i] + (1 - b1) * g
+                v[i] = b2 * v[i] + (1 - b2) * g * g
+                q -= lr * (m[i] / (1 - b1 ** t)) / (np.sqrt(v[i] / (1 - b2 ** t)) + eps)
+        return self
+
+
+def _embed(train_z: np.ndarray, test_z: np.ndarray, encoder: str, seed: int) -> tuple[np.ndarray, np.ndarray]:
+    """2-D embedding of the standardised features, fit on the training weeks only."""
+    train_z, test_z = np.asarray(train_z, dtype=float), np.asarray(test_z, dtype=float)
+    if encoder == "ae_numpy":
+        ae = NumpyAE(seed=seed).fit(train_z)
+        return ae.encode(train_z), ae.encode(test_z)
+    if encoder == "pca":
+        from sklearn.decomposition import PCA
+        pca = PCA(2, random_state=seed).fit(train_z)
+        return pca.transform(train_z), pca.transform(test_z)
+    import torch
+    ae = _fit(train_z, seed)
+    with torch.no_grad():
+        return (ae.enc(torch.from_numpy(train_z.astype(np.float32))).numpy(),
+                ae.enc(torch.from_numpy(test_z.astype(np.float32))).numpy())
+
+
+def detect_regimes(p: Panel, first_year: int = 2010, seed: int = 0, window_years: int | None = None,
+                   encoder: str = "ae") -> pd.DataFrame:
+    """``window_years=None``: expanding window (all history before Y); an int: only the last ``window_years``.
+    ``encoder``: "ae" (the original torch autoencoder), "ae_numpy" (the same network in NumPy, no torch) or "pca"
+    (rejected: different labels, report/results/regime_pca_check.md)."""
     from sklearn.cluster import KMeans
 
     f = market_features(p)
@@ -99,10 +167,7 @@ def detect_regimes(p: Panel, first_year: int = 2010, seed: int = 0, window_years
         if len(train) < 104 or test.empty:
             continue
         mu, sd = train.mean(), train.std().replace(0, 1)
-        ae = _fit(((train - mu) / sd).to_numpy(), seed)
-        with torch.no_grad():
-            z_tr = ae.enc(torch.from_numpy(((train - mu) / sd).to_numpy(np.float32))).numpy()
-            z_te = ae.enc(torch.from_numpy(((test - mu) / sd).to_numpy(np.float32))).numpy()
+        z_tr, z_te = _embed(((train - mu) / sd).to_numpy(), ((test - mu) / sd).to_numpy(), encoder, seed)
         km = KMeans(3, n_init=10, random_state=seed).fit(z_tr)
         stats = train.assign(c=km.labels_, vol_level=f["vol_level"].reindex(train.index))             .groupby("c")[["vol_level", "nifty_ret_20"]].mean()
         stress = stats["vol_level"].idxmax()

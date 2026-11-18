@@ -1,22 +1,16 @@
-# torch: install the CPU wheel first (see README)
-gymnasium>=1.0
-stable-baselines3>=2.3
+# The desktop app and its daily pipeline (no torch since 18 Nov 2026; tests/test_no_torch.py keeps it that way).
+# Research code, the RL allocator, FinBERT and the Streamlit dashboard need requirements-research.txt as well.
 yfinance>=0.2.50
 pandas>=2.2
 numpy>=2.0
 pyarrow>=15
 scipy>=1.13
-PyPortfolioOpt>=1.5
-matplotlib>=3.8
-plotly>=5.20
-streamlit>=1.35
-tensorboard>=2.16
 pyyaml>=6
-arch>=7.0
+arch>=7.0              # GARCH baseline in the volatility research
 scikit-learn>=1.4
-transformers>=4.40     # FinBERT news sentiment (model weights ~440 MB, downloaded on first use)
-lightgbm>=4.3          # next-day model
+lightgbm>=4.3          # next-day model (monthly refit)
 psutil>=5.9
+requests>=2.31         # Dhan market data (optional)
 PySide6>=6.6           # desktop app
 pyqtgraph>=0.13
 pyinstaller>=6.0       # packaging

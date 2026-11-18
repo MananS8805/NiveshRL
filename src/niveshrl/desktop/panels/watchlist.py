@@ -6,7 +6,6 @@ from PySide6.QtCore import Qt
 from PySide6.QtWidgets import (QCompleter, QComboBox, QDoubleSpinBox, QHBoxLayout, QLineEdit, QPushButton)
 
 from ... import watchlist as wl
-from ...research import daily
 from .. import data
 from ..widgets import FrameTable, h2, muted
 from . import Panel, vbox
@@ -20,11 +19,6 @@ def watch_rows(feed) -> tuple[pd.DataFrame, dict[str, list[str]]]:
     p = data.panel()
     snap = feed.snapshot() if feed else {}
     t = data.screener_table()
-    prev = None
-    folders = sorted(x for x in daily.DAILY.glob("20*") if x.is_dir())
-    if len(folders) >= 2 and (folders[-2] / "sentiment.parquet").exists():
-        prev = data._cached(f"prevsent:{folders[-2].name}", None,
-                            lambda: pd.read_parquet(folders[-2] / "sentiment.parquet"))
     mon = data.dload("monitor")
     top_now = set(mon[mon["list"] == "watch for strength"].index) if mon is not None else set()
     rows, alerts = [], {}
@@ -36,12 +30,11 @@ def watch_rows(feed) -> tuple[pd.DataFrame, dict[str, list[str]]]:
             (float(t.loc[tkr, "ret_1d"]) if t is not None and tkr in t.index else None)
         r = t.loc[tkr] if t is not None and tkr in t.index else pd.Series(dtype=float)
         dte = r.get("days_to_earnings")
-        a = wl.alerts(it, price, chg, r.get("sentiment"),
-                      prev["sentiment"].get(tkr) if prev is not None else None,
+        a = wl.alerts(it, price, chg, None, None,
                       int(dte) if pd.notna(dte) else None, tkr in top_now, None)
         alerts[tkr] = a
         rows.append({"Tier": wl.TIERS[it.tier][0], "Stock": tkr.replace(".NS", ""), "Price": price, "1D": chg,
-                     "Live": "●" if tick else "", "P(up) 1D": r.get("prob_up"), "Sentiment": r.get("sentiment_adj"),
+                     "Live": "●" if tick else "", "P(up) 1D": r.get("prob_up"),
                      "Analyst": r.get("analyst_score"), "Results in": dte,
                      "Buy ≤": it.target_buy, "Sell ≥": it.target_sell, "Alerts": " · ".join(a), "Note": it.note,
                      "_t": tkr})
@@ -90,7 +83,7 @@ class WatchlistPanel(Panel):
         brow = QHBoxLayout()
         self.rm = QPushButton("Remove selected")
         self.rm.clicked.connect(self._remove)
-        self.hint = muted("Alerts: price at your buy/sell target · ±3% day move · news sentiment flip · results "
+        self.hint = muted("Alerts: price at your buy/sell target · ±3% day move · results "
                           "within 7 days · entered/left tomorrow's top list. Desktop notifications fire once per alert per day.")
         brow.addWidget(self.rm)
         brow.addWidget(self.hint, 1)

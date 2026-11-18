@@ -1,10 +1,12 @@
 """Tomorrow's monitor list: which stocks deserve attention at the next open.
 
-    score = 0.60 x model + 0.15 x news + 0.15 x activity + 0.10 x setup
+    score = (0.60 x model + 0.15 x activity + 0.10 x setup) / 0.85
+
+(News sentiment had a 0.15 weight until 18 Nov 2026. FinBERT was removed: it had no out-of-sample record, and the
+measured swing record was built without news, so this is now exactly the scoring that was measured.)
 
 Each component is scaled to roughly [-1, 1]:
 - model: calibrated next-day P(beat the median) from the ensemble, (P - 0.5) / 0.1, clipped;
-- news: confidence-adjusted FinBERT sentiment (``sentiment_adj``);
 - activity: volume vs its 20-day average, (ratio - 1) / 2, clipped (unusual interest);
 - setup: the share of five bullish technical setups present (20-day breakout,
   new 52-week high, golden cross, Supertrend up, RSI 55-70), mapped to [-1, 1].
@@ -17,7 +19,7 @@ from __future__ import annotations
 import numpy as np
 import pandas as pd
 
-WEIGHTS = {"model": 0.60, "news": 0.15, "activity": 0.15, "setup": 0.10}
+WEIGHTS = {"model": 0.60, "activity": 0.15, "setup": 0.10}   # re-normalised over the components present
 
 
 def components(tech: pd.DataFrame, prob: pd.Series | None, sent: pd.DataFrame | None) -> pd.DataFrame:
