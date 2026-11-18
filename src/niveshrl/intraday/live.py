@@ -243,6 +243,34 @@ class _AlgoDay:
                 self._err(f"algo book settle error: {e}")
 
 
+def late_note(t0: datetime) -> str | None:
+    """A run that starts after the first decisions (09:20) replays the earlier bars from finished data in one batch:
+    still bar by bar and without look-ahead, but nobody could have acted on those decisions live. Say so."""
+    hm = t0.hour * 60 + t0.minute
+    if hm <= 9 * 60 + 20:
+        return None
+    when = t0.strftime("%H:%M")
+    if hm >= 15 * 60 + 21:
+        return (f"Started at {when}, after the close (was the laptop asleep?): the whole day was replayed from finished "
+                "bars. No decision was live and none was logged before its outcome.")
+    return (f"Started late, at {when}: decisions before then were replayed from finished bars and were logged after "
+            "their outcomes could be seen; only later decisions were live.")
+
+
+def _mark_late(path, note: str) -> None:
+    """Prepend the late-start note to a saved review and correct its forward-log claim."""
+    try:
+        r = json.loads(path.read_text(encoding="utf-8"))
+        r["summary"] = [note] + [x for x in r.get("summary", []) if x != note]
+        r["learnings"] = [x.replace("Every decision was recorded before its outcome.",
+                                    "Today's early decisions were logged after the fact (late start).")
+                          for x in r.get("learnings", [])]
+        r["late_start"] = note
+        path.write_text(json.dumps(r, indent=1, default=str), encoding="utf-8")
+    except Exception:                                            # noqa: BLE001
+        pass
+
+
 def run_live(stop_flag=None, sleep=time.sleep) -> dict:
     """Run one trading day. ``stop_flag()`` -> True stops early (the app's Stop button)."""
     cfg = config()
@@ -363,6 +391,13 @@ def run_live(stop_flag=None, sleep=time.sleep) -> dict:
             _v2_status({"phase": "error", "day": day, "message": f"v2 settle error: {e}"})
     cp.settle(bars, ctx, nifty)
     algo.settle(bars, ctx)
+    note = late_note(t0)
+    if note:
+        from .copilot import CDIR
+        from .algo.book import ADIR
+        for f in (CDIR / "reviews" / f"{day}.json", ADIR / "reviews" / f"{day}.json"):
+            if f.exists():
+                _mark_late(f, note)
     _write_status({"phase": "closed", "day": day, "at": now_ist().isoformat(timespec="seconds"), "result": res.to_dict(),
                    "trades": [t.to_dict() for t in trades], "log": log[-200:], "pool": agent.state["pool"],
                    "message": f"Day settled: net ₹{res.net:+,.0f} after ₹{res.costs:,.0f} costs; learned "

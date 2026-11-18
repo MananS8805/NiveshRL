@@ -247,3 +247,17 @@ def test_review_reports_forward_hypothesis_without_trading_it():
     assert len(line) == 1 and "today 3 trade(s), ₹-20" in line[0] and "5 trades over 2 days, ₹+30" in line[0]
     assert "₹-1,159" in line[0]
     assert day_review("2026-11-18", rec | {"hypotheses": []}, pd.DataFrame(), [], [], None, state)["learnings"]
+
+
+def test_late_start_is_labelled_in_the_review(tmp_path):
+    import json
+    from datetime import datetime
+    from niveshrl.intraday.live import _mark_late, late_note
+    assert late_note(datetime(2026, 11, 18, 9, 5)) is None
+    assert "after the close" in late_note(datetime(2026, 11, 18, 15, 48))
+    assert "Started late, at 11:02" in late_note(datetime(2026, 11, 18, 11, 2))
+    f = tmp_path / "r.json"
+    f.write_text(json.dumps({"summary": ["a"], "learnings": ["Forward log: ok. Every decision was recorded before its outcome."]}))
+    _mark_late(f, late_note(datetime(2026, 11, 18, 15, 48)))
+    r = json.loads(f.read_text())
+    assert r["summary"][0].startswith("Started at 15:48") and "after the fact" in r["learnings"][0]
